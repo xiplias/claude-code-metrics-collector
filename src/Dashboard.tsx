@@ -31,6 +31,8 @@ interface SessionStats {
   total_cache_creation_tokens: number;
   avg_cost_per_session: number;
   max_session_cost: number;
+  total_messages: number;
+  avg_cost_per_message: number;
 }
 
 interface Session {
@@ -148,15 +150,34 @@ export function Dashboard() {
   const uniqueMetrics = data.metrics.length;
   const uniqueEvents = new Set(data.events.map(e => e.event_name)).size;
   
-  // Calculate total tokens
+  // Calculate total tokens (input + output only, cache tokens are a subset of input)
   const totalTokens = (data.sessions?.total_input_tokens || 0) + 
-                     (data.sessions?.total_output_tokens || 0) + 
-                     (data.sessions?.total_cache_read_tokens || 0) + 
-                     (data.sessions?.total_cache_creation_tokens || 0);
+                     (data.sessions?.total_output_tokens || 0);
+
+  // Calculate uncached tokens
+  const cachedTokens = (data.sessions?.total_cache_read_tokens || 0) + 
+                      (data.sessions?.total_cache_creation_tokens || 0);
+  // Uncached = all output tokens + (input tokens - cache read tokens)
+  const uncachedInputTokens = Math.max(0, (data.sessions?.total_input_tokens || 0) - (data.sessions?.total_cache_read_tokens || 0));
+  const uncachedTokens = (data.sessions?.total_output_tokens || 0) + uncachedInputTokens;
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sessions</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.sessions?.total_sessions || 0}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              <div>{data.sessions?.total_messages || 0} messages</div>
+              <div>{data.sessions?.unique_users || 0} unique users</div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
@@ -164,9 +185,10 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${(data.sessions?.total_cost || 0).toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}/session
-            </p>
+            <div className="text-xs text-muted-foreground mt-1">
+              <div>Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}/session</div>
+              <div>Avg ${(data.sessions?.avg_cost_per_message || 0).toFixed(4)}/message</div>
+            </div>
           </CardContent>
         </Card>
 
@@ -177,22 +199,24 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalTokens.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              Input: {(data.sessions?.total_input_tokens || 0).toLocaleString()}
-            </p>
+            <div className="text-xs text-muted-foreground mt-1">
+              <div>Input: {(data.sessions?.total_input_tokens || 0).toLocaleString()}</div>
+              <div>Output: {(data.sessions?.total_output_tokens || 0).toLocaleString()}</div>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sessions</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Uncached Tokens</CardTitle>
+            <Code2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.sessions?.total_sessions || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {data.sessions?.unique_users || 0} unique users
-            </p>
+            <div className="text-2xl font-bold">{uncachedTokens.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              <div>Input: {uncachedInputTokens.toLocaleString()}</div>
+              <div>Output: {(data.sessions?.total_output_tokens || 0).toLocaleString()}</div>
+            </div>
           </CardContent>
         </Card>
 
@@ -202,12 +226,11 @@ export function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {((data.sessions?.total_cache_read_tokens || 0) + (data.sessions?.total_cache_creation_tokens || 0)).toLocaleString()}
+            <div className="text-2xl font-bold">{cachedTokens.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              <div>Read: {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}</div>
+              <div>Creation: {(data.sessions?.total_cache_creation_tokens || 0).toLocaleString()}</div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Read: {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}
-            </p>
           </CardContent>
         </Card>
       </div>

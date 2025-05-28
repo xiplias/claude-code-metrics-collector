@@ -68,6 +68,24 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT UNIQUE NOT NULL,
+    session_id TEXT NOT NULL,
+    conversation_id TEXT,
+    role TEXT,
+    model TEXT,
+    cost REAL DEFAULT 0,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+  )
+`);
+
 // Prepare statements for better performance
 const insertMetric = db.prepare(`
   INSERT INTO metrics (metric_type, metric_name, metric_value, labels, project_path, user_id, session_id, metadata)
@@ -100,6 +118,20 @@ const updateSessionCost = db.prepare(`
       total_cache_creation_tokens = total_cache_creation_tokens + ?,
       last_seen = CURRENT_TIMESTAMP
   WHERE session_id = ?
+`);
+
+const insertMessage = db.prepare(`
+  INSERT INTO messages (message_id, session_id, conversation_id, role, model, cost, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const updateMessageTokens = db.prepare(`
+  UPDATE messages 
+  SET input_tokens = input_tokens + ?,
+      output_tokens = output_tokens + ?,
+      cache_read_tokens = cache_read_tokens + ?,
+      cache_creation_tokens = cache_creation_tokens + ?
+  WHERE message_id = ?
 `);
 
 // Helper function to extract attributes from OTLP data
@@ -162,6 +194,47 @@ function processOTLPMetrics(data: any) {
               const cacheCreationTokens = tokenType === 'cacheCreation' ? value : 0;
               
               updateSessionCost.run(0, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sessionId);
+            } else if (sessionId && metricName === 'conversation.message.cost') {
+              // Handle message cost metric
+              const messageId = attrs.message_id || attrs['message.id'];
+              const conversationId = attrs.conversation_id || attrs['conversation.id'];
+              const role = attrs.role || attrs['message.role'];
+              const model = attrs.model || attrs['message.model'];
+              const cost = value;
+              
+              if (messageId) {
+                // Try to insert the message (will be updated with tokens later)
+                try {
+                  insertMessage.run(
+                    messageId,
+                    sessionId,
+                    conversationId || null,
+                    role || null,
+                    model || null,
+                    cost,
+                    0, // input_tokens - will be updated
+                    0, // output_tokens - will be updated
+                    0, // cache_creation_tokens - will be updated
+                    0  // cache_read_tokens - will be updated
+                  );
+                } catch (e) {
+                  // Message might already exist, that's ok
+                }
+              }
+            } else if (metricName === 'conversation.message.tokens') {
+              // Handle message token metric
+              const messageId = attrs.message_id || attrs['message.id'];
+              const tokenType = attrs.type || attrs['token.type'];
+              
+              if (messageId && tokenType) {
+                const inputTokens = tokenType === 'input' ? value : 0;
+                const outputTokens = tokenType === 'output' ? value : 0;
+                const cacheReadTokens = tokenType === 'cache_read' ? value : 0;
+                const cacheCreationTokens = tokenType === 'cache_creation' ? value : 0;
+                
+                // Update message tokens
+                updateMessageTokens.run(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, messageId);
+              }
             }
 
             insertMetric.run(
@@ -484,6 +557,14 @@ const server = serve({
           )
           .get();
 
+        // Get total message count
+        const messageCount = db
+          .query(`SELECT COUNT(*) as total_messages FROM messages`)
+          .get();
+
+        // Calculate average cost per message
+        const avgCostPerMessage = sessionStats.total_cost / messageCount.total_messages || 0;
+
         const recentSessions = db
           .query(
             `
@@ -498,7 +579,11 @@ const server = serve({
           {
             metrics: metricStats,
             events: eventStats,
-            sessions: sessionStats,
+            sessions: {
+              ...sessionStats,
+              total_messages: messageCount.total_messages,
+              avg_cost_per_message: avgCostPerMessage,
+            },
             recentSessions,
           },
           { headers: corsHeaders }

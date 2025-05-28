@@ -60,11 +60,17 @@ export function SessionDetails() {
       try {
         setLoading(true);
         const response = await fetch(`/session/${sessionId}`);
-        if (!response.ok) throw new Error('Failed to fetch session details');
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error(`Session ${sessionId} not found`);
+          }
+          throw new Error(`Failed to fetch session details: ${response.status}`);
+        }
         const sessionData = await response.json();
         setData(sessionData);
         setError(null);
       } catch (err) {
+        console.error('Error fetching session:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setLoading(false);
