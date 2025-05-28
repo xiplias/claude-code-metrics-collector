@@ -176,11 +176,11 @@ function processOTLPMetrics(data: any) {
             const value = dp.asInt || dp.asDouble || 0;
 
             // Extract session info for Claude Code metrics
-            const sessionId = attrs['session.id'] || attrs.session_id;
-            const userId = attrs['user.id'] || attrs.user_id;
-            const userEmail = attrs['user.email'];
-            const orgId = attrs['organization.id'];
-            const model = attrs.model;
+            const sessionId = attrs['session.id'] || attrs.session_id || resourceAttrs['session.id'] || resourceAttrs.session_id;
+            const userId = attrs['user.id'] || attrs.user_id || resourceAttrs['user.id'] || resourceAttrs.user_id;
+            const userEmail = attrs['user.email'] || resourceAttrs['user.email'];
+            const orgId = attrs['organization.id'] || resourceAttrs['organization.id'];
+            const model = attrs.model || resourceAttrs.model;
 
             // Create/update session if we have session data
             if (sessionId && metricName === 'claude_code.cost.usage') {
