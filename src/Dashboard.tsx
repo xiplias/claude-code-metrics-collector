@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, Pie, PieChart, XAxis, YAxis, Cell } from "recharts";
-import { Activity, Clock, Code2, FileText, GitBranch, Package, Terminal, Users } from "lucide-react";
+import { Activity, Clock, Code2, FileText, GitBranch, Package, Terminal, Users, DollarSign, Hash } from "lucide-react";
 
 interface MetricStat {
   metric_name: string;
@@ -20,9 +21,39 @@ interface EventStat {
   avg_duration_ms: number | null;
 }
 
+interface SessionStats {
+  total_sessions: number;
+  unique_users: number;
+  total_cost: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  avg_cost_per_session: number;
+  max_session_cost: number;
+}
+
+interface Session {
+  id: number;
+  session_id: string;
+  user_id: string;
+  user_email: string;
+  organization_id: string;
+  model: string;
+  total_cost: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  first_seen: string;
+  last_seen: string;
+}
+
 interface DashboardData {
   metrics: MetricStat[];
   events: EventStat[];
+  sessions: SessionStats;
+  recentSessions: Session[];
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
@@ -35,7 +66,7 @@ export function Dashboard() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/stats');
+      const response = await fetch('/stats');
       if (!response.ok) throw new Error('Failed to fetch stats');
       const stats = await response.json();
       setData(stats);
@@ -49,7 +80,7 @@ export function Dashboard() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    const interval = setInterval(fetchData, 1000); // Refresh every 1 second
     return () => clearInterval(interval);
   }, []);
 
@@ -116,67 +147,66 @@ export function Dashboard() {
   const totalEvents = data.events.reduce((sum, e) => sum + e.count, 0);
   const uniqueMetrics = data.metrics.length;
   const uniqueEvents = new Set(data.events.map(e => e.event_name)).size;
+  
+  // Calculate total tokens
+  const totalTokens = (data.sessions?.total_input_tokens || 0) + 
+                     (data.sessions?.total_output_tokens || 0) + 
+                     (data.sessions?.total_cache_read_tokens || 0) + 
+                     (data.sessions?.total_cache_creation_tokens || 0);
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Metrics</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${(data.sessions?.total_cost || 0).toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">
+              Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}/session
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
+            <Hash className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalTokens.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">
+              Input: {(data.sessions?.total_input_tokens || 0).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sessions</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.sessions?.total_sessions || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {data.sessions?.unique_users || 0} unique users
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Cache Tokens</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalMetrics.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {uniqueMetrics} unique metric types
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Events</CardTitle>
-            <Terminal className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalEvents.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {uniqueEvents} unique event types
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Commands</CardTitle>
-            <Code2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{commandMetrics.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Commands tracked
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Response Time</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
             <div className="text-2xl font-bold">
-              {data.events.length > 0 
-                ? Math.round(
-                    data.events
-                      .filter(e => e.avg_duration_ms)
-                      .reduce((sum, e) => sum + (e.avg_duration_ms || 0), 0) / 
-                    data.events.filter(e => e.avg_duration_ms).length
-                  )
-                : 0}ms
+              {((data.sessions?.total_cache_read_tokens || 0) + (data.sessions?.total_cache_creation_tokens || 0)).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
-              Average duration
+              Read: {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -185,17 +215,38 @@ export function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Top Commands</CardTitle>
-            <CardDescription>Most frequently used commands and tools</CardDescription>
+            <CardTitle>Session Metrics</CardTitle>
+            <CardDescription>Price and token usage per session</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[300px]">
-              <BarChart data={topCommands} layout="horizontal">
+            <ChartContainer config={{
+              cost: {
+                label: "Cost ($)",
+                color: "#0088FE",
+              },
+              inputTokens: {
+                label: "Input Tokens (k)",
+                color: "#00C49F",
+              },
+              outputTokens: {
+                label: "Output Tokens (k)",
+                color: "#FFBB28",
+              },
+            }} className="h-[300px]">
+              <BarChart data={data.recentSessions?.slice(-10).map((session, index) => ({
+                session: `S${index + 1}`,
+                cost: session.total_cost,
+                inputTokens: session.total_input_tokens / 1000, // Scale down for better visualization
+                outputTokens: session.total_output_tokens / 1000,
+              })) || []}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={100} />
+                <XAxis dataKey="session" />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
+                <Bar yAxisId="right" dataKey="inputTokens" fill="var(--color-inputTokens)" />
+                <Bar yAxisId="right" dataKey="outputTokens" fill="var(--color-outputTokens)" />
               </BarChart>
             </ChartContainer>
           </CardContent>
@@ -232,13 +283,73 @@ export function Dashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Activity Timeline</CardTitle>
-          <CardDescription>Command usage over time</CardDescription>
+          <CardTitle>Recent Sessions</CardTitle>
+          <CardDescription>Latest Claude Code sessions</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground text-center py-8">
-            Timeline visualization requires time-series data collection
+          <div className="space-y-4">
+            {data.recentSessions?.length > 0 ? (
+              data.recentSessions.map((session) => (
+                <Link key={session.session_id} href={`/session/${session.session_id}`}>
+                  <a className="flex items-center justify-between border-b pb-2 hover:bg-muted/50 px-2 -mx-2 rounded cursor-pointer transition-colors">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        {session.user_email || 'Unknown User'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Model: {session.model} • Session: {session.session_id.slice(0, 8)}...
+                      </p>
+                    </div>
+                    <div className="text-right space-y-1">
+                      <p className="text-sm font-semibold">${session.total_cost.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(session.total_input_tokens + session.total_output_tokens).toLocaleString()} tokens
+                      </p>
+                    </div>
+                  </a>
+                </Link>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-4">
+                No sessions recorded yet
+              </div>
+            )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Token Usage Breakdown</CardTitle>
+          <CardDescription>Distribution of token types</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.sessions && (
+            <ChartContainer config={chartConfig} className="h-[300px]">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Input', value: data.sessions.total_input_tokens || 0 },
+                    { name: 'Output', value: data.sessions.total_output_tokens || 0 },
+                    { name: 'Cache Read', value: data.sessions.total_cache_read_tokens || 0 },
+                    { name: 'Cache Creation', value: data.sessions.total_cache_creation_tokens || 0 },
+                  ].filter(item => item.value > 0)}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {[0, 1, 2, 3].map((index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <ChartTooltip content={<ChartTooltipContent />} />
+              </PieChart>
+            </ChartContainer>
+          )}
         </CardContent>
       </Card>
     </div>
