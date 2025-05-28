@@ -616,6 +616,56 @@ const server = serve({
       },
     },
 
+    // GET /session/:id - Get individual session details
+    "/session/:id": {
+      async GET(req, params) {
+        const sessionId = params.id;
+
+        // Get session info
+        const session = db
+          .query(`SELECT * FROM sessions WHERE session_id = ?`)
+          .get(sessionId);
+
+        if (!session) {
+          return Response.json(
+            { error: "Session not found" },
+            { headers: corsHeaders, status: 404 }
+          );
+        }
+
+        // Get all messages for this session
+        const messages = db
+          .query(
+            `
+            SELECT * FROM messages
+            WHERE session_id = ?
+            ORDER BY timestamp ASC
+          `
+          )
+          .all(sessionId);
+
+        // Get all events for this session
+        const events = db
+          .query(
+            `
+            SELECT * FROM events
+            WHERE session_id = ?
+            ORDER BY timestamp ASC
+          `
+          )
+          .all(sessionId);
+
+        return Response.json(
+          {
+            session,
+            messages,
+            events,
+          },
+          { headers: corsHeaders }
+        );
+      },
+    },
+
     // GET /logs - Get request logs
     "/logs": {
       async GET(req) {
@@ -653,15 +703,16 @@ console.log(`🚀 Unified server running at ${server.url}
 
 Available endpoints:
   API:
-    POST /metrics    - Record a metric
-    POST /events     - Record an event
-    GET  /metrics    - Query metrics (params: limit, offset)
-    GET  /events     - Query events (params: limit, offset)
-    GET  /stats      - Get summary statistics
-    GET  /sessions   - Query sessions (params: limit, offset)
-    GET  /logs       - Query request logs (params: limit, offset)
-    POST /v1/metrics - Receive OTLP metrics
-    GET  /health     - Health check
+    POST /metrics     - Record a metric
+    POST /events      - Record an event
+    GET  /metrics     - Query metrics (params: limit, offset)
+    GET  /events      - Query events (params: limit, offset)
+    GET  /stats       - Get summary statistics
+    GET  /sessions    - Query sessions (params: limit, offset)
+    GET  /session/:id - Get individual session details
+    GET  /logs        - Query request logs (params: limit, offset)
+    POST /v1/metrics  - Receive OTLP metrics
+    GET  /health      - Health check
     
   Frontend:
     /  - React application
