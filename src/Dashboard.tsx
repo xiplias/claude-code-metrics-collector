@@ -254,29 +254,36 @@ export function Dashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Event Distribution</CardTitle>
-            <CardDescription>Breakdown of events by type</CardDescription>
+            <CardTitle>Token Usage Breakdown</CardTitle>
+            <CardDescription>Distribution of token types</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[300px]">
-              <PieChart>
-                <Pie
-                  data={eventTypeData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {eventTypeData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <ChartTooltip content={<ChartTooltipContent />} />
-              </PieChart>
-            </ChartContainer>
+            {data.sessions && (
+              <ChartContainer config={chartConfig} className="h-[300px]">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Input', value: data.sessions.total_input_tokens || 0 },
+                      { name: 'Output', value: data.sessions.total_output_tokens || 0 },
+                      { name: 'Cache Read', value: data.sessions.total_cache_read_tokens || 0 },
+                      { name: 'Cache Creation', value: data.sessions.total_cache_creation_tokens || 0 },
+                    ].filter(item => item.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {[0, 1, 2, 3].map((index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                </PieChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -315,41 +322,6 @@ export function Dashboard() {
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Token Usage Breakdown</CardTitle>
-          <CardDescription>Distribution of token types</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {data.sessions && (
-            <ChartContainer config={chartConfig} className="h-[300px]">
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: 'Input', value: data.sessions.total_input_tokens || 0 },
-                    { name: 'Output', value: data.sessions.total_output_tokens || 0 },
-                    { name: 'Cache Read', value: data.sessions.total_cache_read_tokens || 0 },
-                    { name: 'Cache Creation', value: data.sessions.total_cache_creation_tokens || 0 },
-                  ].filter(item => item.value > 0)}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {[0, 1, 2, 3].map((index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <ChartTooltip content={<ChartTooltipContent />} />
-              </PieChart>
-            </ChartContainer>
-          )}
         </CardContent>
       </Card>
     </div>
