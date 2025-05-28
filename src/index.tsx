@@ -35,6 +35,39 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS request_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    request_body TEXT,
+    response_status INTEGER,
+    response_time_ms INTEGER,
+    error_message TEXT
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT UNIQUE NOT NULL,
+    user_id TEXT,
+    user_email TEXT,
+    organization_id TEXT,
+    model TEXT,
+    total_cost REAL DEFAULT 0,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    total_cache_read_tokens INTEGER DEFAULT 0,
+    total_cache_creation_tokens INTEGER DEFAULT 0,
+    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 // Prepare statements for better performance
 const insertMetric = db.prepare(`
   INSERT INTO metrics (metric_type, metric_name, metric_value, labels, project_path, user_id, session_id, metadata)
@@ -46,14 +79,41 @@ const insertEvent = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
+const insertLog = db.prepare(`
+  INSERT INTO request_logs (endpoint, method, ip_address, user_agent, request_body, response_status, response_time_ms, error_message)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const upsertSession = db.prepare(`
+  INSERT INTO sessions (session_id, user_id, user_email, organization_id, model)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(session_id) DO UPDATE SET
+    last_seen = CURRENT_TIMESTAMP
+`);
+
+const updateSessionCost = db.prepare(`
+  UPDATE sessions 
+  SET total_cost = total_cost + ?,
+      total_input_tokens = total_input_tokens + ?,
+      total_output_tokens = total_output_tokens + ?,
+      total_cache_read_tokens = total_cache_read_tokens + ?,
+      total_cache_creation_tokens = total_cache_creation_tokens + ?,
+      last_seen = CURRENT_TIMESTAMP
+  WHERE session_id = ?
+`);
+
 // Helper function to extract attributes from OTLP data
 function extractAttributes(attributes: any[]): Record<string, any> {
   const result: Record<string, any> = {};
   if (!attributes) return result;
-  
+
   for (const attr of attributes) {
     const key = attr.key;
-    const value = attr.value?.stringValue || attr.value?.intValue || attr.value?.doubleValue || attr.value?.boolValue;
+    const value =
+      attr.value?.stringValue ||
+      attr.value?.intValue ||
+      attr.value?.doubleValue ||
+      attr.value?.boolValue;
     if (key && value !== undefined) {
       result[key] = value;
     }
@@ -64,17 +124,17 @@ function extractAttributes(attributes: any[]): Record<string, any> {
 // Process OTLP metrics data
 function processOTLPMetrics(data: any) {
   const resourceMetrics = data.resourceMetrics || [];
-  
+
   for (const rm of resourceMetrics) {
     const resourceAttrs = extractAttributes(rm.resource?.attributes || []);
     const scopeMetrics = rm.scopeMetrics || [];
-    
+
     for (const sm of scopeMetrics) {
       const metrics = sm.metrics || [];
-      
+
       for (const metric of metrics) {
         const metricName = metric.name;
-        
+
         // Handle different metric types
         if (metric.sum) {
           // Counter or UpDownCounter
@@ -82,18 +142,39 @@ function processOTLPMetrics(data: any) {
           for (const dp of dataPoints) {
             const attrs = extractAttributes(dp.attributes || []);
             const value = dp.asInt || dp.asDouble || 0;
-            
+
+            // Extract session info for Claude Code metrics
+            const sessionId = attrs['session.id'] || attrs.session_id;
+            const userId = attrs['user.id'] || attrs.user_id;
+            const userEmail = attrs['user.email'];
+            const orgId = attrs['organization.id'];
+            const model = attrs.model;
+
+            // Create/update session if we have session data
+            if (sessionId && metricName === 'claude_code.cost.usage') {
+              upsertSession.run(sessionId, userId, userEmail, orgId, model);
+              updateSessionCost.run(value, 0, 0, 0, 0, sessionId);
+            } else if (sessionId && metricName === 'claude_code.token.usage') {
+              const tokenType = attrs.type;
+              const inputTokens = tokenType === 'input' ? value : 0;
+              const outputTokens = tokenType === 'output' ? value : 0;
+              const cacheReadTokens = tokenType === 'cacheRead' ? value : 0;
+              const cacheCreationTokens = tokenType === 'cacheCreation' ? value : 0;
+              
+              updateSessionCost.run(0, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sessionId);
+            }
+
             insertMetric.run(
               metric.sum.isMonotonic ? "counter" : "gauge",
               metricName,
               value,
               JSON.stringify({ ...resourceAttrs, ...attrs }),
               attrs.project_path || resourceAttrs.project_path || null,
-              attrs.user_account_uuid || resourceAttrs.user_account_uuid || null,
-              attrs.session_id || resourceAttrs.session_id || null,
+              userId || attrs.user_account_uuid || resourceAttrs.user_account_uuid || null,
+              sessionId || resourceAttrs.session_id || null,
               JSON.stringify({
                 timestamp: dp.timeUnixNano,
-                service: resourceAttrs.service?.name || "claude-code"
+                service: resourceAttrs['service.name'] || "claude-code",
               })
             );
           }
@@ -103,18 +184,20 @@ function processOTLPMetrics(data: any) {
           for (const dp of dataPoints) {
             const attrs = extractAttributes(dp.attributes || []);
             const value = dp.asInt || dp.asDouble || 0;
-            
+
             insertMetric.run(
               "gauge",
               metricName,
               value,
               JSON.stringify({ ...resourceAttrs, ...attrs }),
               attrs.project_path || resourceAttrs.project_path || null,
-              attrs.user_account_uuid || resourceAttrs.user_account_uuid || null,
+              attrs.user_account_uuid ||
+                resourceAttrs.user_account_uuid ||
+                null,
               attrs.session_id || resourceAttrs.session_id || null,
               JSON.stringify({
                 timestamp: dp.timeUnixNano,
-                service: resourceAttrs.service?.name || "claude-code"
+                service: resourceAttrs['service.name'] || "claude-code",
               })
             );
           }
@@ -123,27 +206,29 @@ function processOTLPMetrics(data: any) {
           const dataPoints = metric.histogram.dataPoints || [];
           for (const dp of dataPoints) {
             const attrs = extractAttributes(dp.attributes || []);
-            
+
             // Store histogram summary statistics
             insertMetric.run(
               "histogram",
               metricName,
               dp.sum || 0,
-              JSON.stringify({ 
-                ...resourceAttrs, 
+              JSON.stringify({
+                ...resourceAttrs,
                 ...attrs,
                 count: dp.count,
                 min: dp.min,
-                max: dp.max
+                max: dp.max,
               }),
               attrs.project_path || resourceAttrs.project_path || null,
-              attrs.user_account_uuid || resourceAttrs.user_account_uuid || null,
+              attrs.user_account_uuid ||
+                resourceAttrs.user_account_uuid ||
+                null,
               attrs.session_id || resourceAttrs.session_id || null,
               JSON.stringify({
                 timestamp: dp.timeUnixNano,
-                service: resourceAttrs.service?.name || "claude-code",
+                service: resourceAttrs['service.name'] || "claude-code",
                 buckets: dp.bucketCounts,
-                exemplars: dp.exemplars
+                exemplars: dp.exemplars,
               })
             );
           }
@@ -160,92 +245,200 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, X-Service",
 };
 
+// Logging helper function - only log data ingestion endpoints
+function logRequest(
+  req: Request,
+  endpoint: string,
+  responseStatus: number,
+  responseTime: number,
+  errorMessage?: string,
+  requestBody?: string
+) {
+  // Only log POST requests that are recording data (metrics, events, OTLP)
+  const isDataIngestion =
+    req.method === "POST" &&
+    (endpoint === "/metrics" ||
+      endpoint === "/events" ||
+      endpoint === "/v1/metrics");
+
+  if (!isDataIngestion) {
+    return; // Skip logging for UI/read operations
+  }
+
+  const url = new URL(req.url);
+  const ip =
+    req.headers.get("x-forwarded-for") ||
+    req.headers.get("x-real-ip") ||
+    "unknown";
+  const userAgent = req.headers.get("user-agent") || "unknown";
+
+  try {
+    insertLog.run(
+      endpoint,
+      req.method,
+      ip,
+      userAgent,
+      requestBody || null,
+      responseStatus,
+      responseTime,
+      errorMessage || null
+    );
+    console.log(
+      `[${new Date().toISOString()}] DATA RECEIVED: ${
+        req.method
+      } ${endpoint} - ${responseStatus} (${responseTime}ms)`
+    );
+  } catch (error) {
+    console.error("Failed to log request:", error);
+  }
+}
+
 const server = serve({
   routes: {
-    // Serve index.html for all unmatched routes.
-    "/*": index,
-
-    // POST /api/metrics - Record a metric
-    "/api/metrics": {
+    // POST /metrics - Record a metric
+    "/metrics": {
       async POST(req) {
-        const data = await req.json();
-        
-        insertMetric.run(
-          data.metric_type || "counter",
-          data.metric_name,
-          data.metric_value || 1,
-          JSON.stringify(data.labels || {}),
-          data.project_path || null,
-          data.user_id || null,
-          data.session_id || null,
-          JSON.stringify(data.metadata || {})
-        );
+        const startTime = Date.now();
+        let requestBody: string | undefined;
 
-        return Response.json(
-          { success: true, message: "Metric recorded" },
-          { headers: corsHeaders }
-        );
+        try {
+          const data = await req.json();
+          requestBody = JSON.stringify(data);
+
+          insertMetric.run(
+            data.metric_type || "counter",
+            data.metric_name,
+            data.metric_value || 1,
+            JSON.stringify(data.labels || {}),
+            data.project_path || null,
+            data.user_id || null,
+            data.session_id || null,
+            JSON.stringify(data.metadata || {})
+          );
+
+          const responseTime = Date.now() - startTime;
+          logRequest(
+            req,
+            "/metrics",
+            200,
+            responseTime,
+            undefined,
+            requestBody
+          );
+
+          return Response.json(
+            { success: true, message: "Metric recorded" },
+            { headers: corsHeaders }
+          );
+        } catch (error) {
+          const responseTime = Date.now() - startTime;
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logRequest(
+            req,
+            "/metrics",
+            500,
+            responseTime,
+            errorMessage,
+            requestBody
+          );
+
+          return Response.json(
+            { error: "Failed to record metric", message: errorMessage },
+            { headers: corsHeaders, status: 500 }
+          );
+        }
       },
       async GET(req) {
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "100");
         const offset = parseInt(url.searchParams.get("offset") || "0");
-        
-        const metrics = db.query(`
+
+        const metrics = db
+          .query(
+            `
           SELECT * FROM metrics 
           ORDER BY timestamp DESC 
           LIMIT ? OFFSET ?
-        `).all(limit, offset);
+        `
+          )
+          .all(limit, offset);
 
-        return Response.json(
-          { metrics },
-          { headers: corsHeaders }
-        );
-      }
+        return Response.json({ metrics }, { headers: corsHeaders });
+      },
     },
 
-    // POST /api/events - Record an event
-    "/api/events": {
+    // POST /events - Record an event
+    "/events": {
       async POST(req) {
-        const data = await req.json();
-        
-        insertEvent.run(
-          data.event_type,
-          data.event_name,
-          data.project_path || null,
-          data.user_id || null,
-          data.session_id || null,
-          data.duration_ms || null,
-          JSON.stringify(data.metadata || {})
-        );
+        const startTime = Date.now();
+        let requestBody: string | undefined;
 
-        return Response.json(
-          { success: true, message: "Event recorded" },
-          { headers: corsHeaders }
-        );
+        try {
+          const data = await req.json();
+          requestBody = JSON.stringify(data);
+
+          insertEvent.run(
+            data.event_type,
+            data.event_name,
+            data.project_path || null,
+            data.user_id || null,
+            data.session_id || null,
+            data.duration_ms || null,
+            JSON.stringify(data.metadata || {})
+          );
+
+          const responseTime = Date.now() - startTime;
+          logRequest(req, "/events", 200, responseTime, undefined, requestBody);
+
+          return Response.json(
+            { success: true, message: "Event recorded" },
+            { headers: corsHeaders }
+          );
+        } catch (error) {
+          const responseTime = Date.now() - startTime;
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logRequest(
+            req,
+            "/events",
+            500,
+            responseTime,
+            errorMessage,
+            requestBody
+          );
+
+          return Response.json(
+            { error: "Failed to record event", message: errorMessage },
+            { headers: corsHeaders, status: 500 }
+          );
+        }
       },
       async GET(req) {
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "100");
         const offset = parseInt(url.searchParams.get("offset") || "0");
-        
-        const events = db.query(`
+
+        const events = db
+          .query(
+            `
           SELECT * FROM events 
           ORDER BY timestamp DESC 
           LIMIT ? OFFSET ?
-        `).all(limit, offset);
+        `
+          )
+          .all(limit, offset);
 
-        return Response.json(
-          { events },
-          { headers: corsHeaders }
-        );
-      }
+        return Response.json({ events }, { headers: corsHeaders });
+      },
     },
 
-    // GET /api/stats - Get summary statistics
-    "/api/stats": {
+    // GET /stats - Get summary statistics
+    "/stats": {
       async GET(req) {
-        const metricStats = db.query(`
+        const metricStats = db
+          .query(
+            `
           SELECT 
             metric_name,
             COUNT(*) as count,
@@ -255,9 +448,13 @@ const server = serve({
             MAX(metric_value) as max
           FROM metrics
           GROUP BY metric_name
-        `).all();
+        `
+          )
+          .all();
 
-        const eventStats = db.query(`
+        const eventStats = db
+          .query(
+            `
           SELECT 
             event_type,
             event_name,
@@ -265,71 +462,182 @@ const server = serve({
             AVG(duration_ms) as avg_duration_ms
           FROM events
           GROUP BY event_type, event_name
-        `).all();
+        `
+          )
+          .all();
+
+        const sessionStats = db
+          .query(
+            `
+          SELECT 
+            COUNT(DISTINCT session_id) as total_sessions,
+            COUNT(DISTINCT user_id) as unique_users,
+            SUM(total_cost) as total_cost,
+            SUM(total_input_tokens) as total_input_tokens,
+            SUM(total_output_tokens) as total_output_tokens,
+            SUM(total_cache_read_tokens) as total_cache_read_tokens,
+            SUM(total_cache_creation_tokens) as total_cache_creation_tokens,
+            AVG(total_cost) as avg_cost_per_session,
+            MAX(total_cost) as max_session_cost
+          FROM sessions
+        `
+          )
+          .get();
+
+        const recentSessions = db
+          .query(
+            `
+          SELECT * FROM sessions
+          ORDER BY last_seen DESC
+          LIMIT 10
+        `
+          )
+          .all();
 
         return Response.json(
-          { 
+          {
             metrics: metricStats,
-            events: eventStats
+            events: eventStats,
+            sessions: sessionStats,
+            recentSessions,
           },
           { headers: corsHeaders }
         );
-      }
+      },
     },
 
-    // POST /api/v1/metrics - OTLP endpoint
-    "/api/v1/metrics": {
+    // POST /v1/metrics - OTLP endpoint
+    "/v1/metrics": {
       async POST(req) {
-        const contentType = req.headers.get("content-type") || "";
-        let data;
-        
-        if (contentType.includes("application/x-protobuf")) {
-          // Handle protobuf format (simplified - in production you'd use proper protobuf decoding)
-          return Response.json(
-            { 
-              error: "Protobuf format not yet supported. Please use JSON format by setting OTEL_EXPORTER_OTLP_PROTOCOL=http/json" 
-            },
-            { headers: corsHeaders, status: 400 }
+        const startTime = Date.now();
+        let requestBody: string | undefined;
+
+        try {
+          const contentType = req.headers.get("content-type") || "";
+          let data;
+
+          if (contentType.includes("application/x-protobuf")) {
+            // Handle protobuf format (simplified - in production you'd use proper protobuf decoding)
+            const responseTime = Date.now() - startTime;
+            logRequest(
+              req,
+              "/v1/metrics",
+              400,
+              responseTime,
+              "Protobuf format not supported"
+            );
+
+            return Response.json(
+              {
+                error:
+                  "Protobuf format not yet supported. Please use JSON format by setting OTEL_EXPORTER_OTLP_PROTOCOL=http/json",
+              },
+              { headers: corsHeaders, status: 400 }
+            );
+          } else {
+            // Handle JSON format
+            data = await req.json();
+            requestBody = JSON.stringify(data);
+          }
+
+          // Process OTLP metrics
+          processOTLPMetrics(data);
+
+          const responseTime = Date.now() - startTime;
+          logRequest(
+            req,
+            "/v1/metrics",
+            200,
+            responseTime,
+            undefined,
+            requestBody
           );
-        } else {
-          // Handle JSON format
-          data = await req.json();
+
+          // OTLP expects an empty response on success
+          return new Response(null, { status: 200, headers: corsHeaders });
+        } catch (error) {
+          const responseTime = Date.now() - startTime;
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logRequest(
+            req,
+            "/v1/metrics",
+            500,
+            responseTime,
+            errorMessage,
+            requestBody
+          );
+
+          return Response.json(
+            { error: "Failed to process OTLP metrics", message: errorMessage },
+            { headers: corsHeaders, status: 500 }
+          );
         }
-        
-        // Process OTLP metrics
-        processOTLPMetrics(data);
-        
-        // OTLP expects an empty response on success
-        return new Response(null, { status: 200, headers: corsHeaders });
-      }
+      },
     },
 
-    // GET /api/health - Health check
-    "/api/health": {
+    // GET /health - Health check
+    "/health": {
       async GET(req) {
-        return Response.json(
-          { 
-            status: "ok",
-            service: "claude-metrics-server",
-            timestamp: new Date().toISOString(),
-            endpoints: {
-              metrics: "/api/metrics",
-              events: "/api/events",
-              stats: "/api/stats",
-              otlp: "/api/v1/metrics"
-            }
+        const response = {
+          status: "ok",
+          service: "claude-metrics-server",
+          timestamp: new Date().toISOString(),
+          endpoints: {
+            metrics: "/metrics",
+            events: "/events",
+            stats: "/stats",
+            otlp: "/v1/metrics",
           },
-          { headers: corsHeaders }
-        );
-      }
+        };
+
+        return Response.json(response, { headers: corsHeaders });
+      },
     },
 
-    // Handle CORS preflight for all routes
-    "/api/*": {
-      async OPTIONS(req) {
-        return new Response(null, { headers: corsHeaders, status: 204 });
-      }
-    }
+    // GET /sessions - Get session data
+    "/sessions": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const limit = parseInt(url.searchParams.get("limit") || "100");
+        const offset = parseInt(url.searchParams.get("offset") || "0");
+
+        const sessions = db
+          .query(
+            `
+          SELECT * FROM sessions
+          ORDER BY last_seen DESC
+          LIMIT ? OFFSET ?
+        `
+          )
+          .all(limit, offset);
+
+        return Response.json({ sessions }, { headers: corsHeaders });
+      },
+    },
+
+    // GET /logs - Get request logs
+    "/logs": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const limit = parseInt(url.searchParams.get("limit") || "100");
+        const offset = parseInt(url.searchParams.get("offset") || "0");
+
+        const logs = db
+          .query(
+            `
+          SELECT * FROM request_logs 
+          ORDER BY timestamp DESC 
+          LIMIT ? OFFSET ?
+        `
+          )
+          .all(limit, offset);
+
+        return Response.json({ logs }, { headers: corsHeaders });
+      },
+    },
+
+    "/*": index,
   },
 
   development: process.env.NODE_ENV !== "production" && {
@@ -345,13 +653,15 @@ console.log(`🚀 Unified server running at ${server.url}
 
 Available endpoints:
   API:
-    POST /api/metrics    - Record a metric
-    POST /api/events     - Record an event
-    GET  /api/metrics    - Query metrics (params: limit, offset)
-    GET  /api/events     - Query events (params: limit, offset)
-    GET  /api/stats      - Get summary statistics
-    POST /api/v1/metrics - Receive OTLP metrics
-    GET  /api/health     - Health check
+    POST /metrics    - Record a metric
+    POST /events     - Record an event
+    GET  /metrics    - Query metrics (params: limit, offset)
+    GET  /events     - Query events (params: limit, offset)
+    GET  /stats      - Get summary statistics
+    GET  /sessions   - Query sessions (params: limit, offset)
+    GET  /logs       - Query request logs (params: limit, offset)
+    POST /v1/metrics - Receive OTLP metrics
+    GET  /health     - Health check
     
   Frontend:
     /  - React application
