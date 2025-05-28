@@ -1,0 +1,14 @@
+# Example .envrc for local Claude Code monitoring overrides
+# Copy this file to .envrc in any directory where you want custom settings
+
+# Override the service name for this specific project
+export OTEL_SERVICE_NAME="claude-code-myproject"
+
+# Use a different collector endpoint (e.g., for production)
+# export OTEL_EXPORTER_OTLP_ENDPOINT="http://production-collector:4318"
+
+# Disable monitoring for this specific directory
+# export CLAUDE_USAGE_MONITORING_ENABLED="false"
+
+# Add project-specific labels
+# export OTEL_RESOURCE_ATTRIBUTES="project=myproject,environment=development"
