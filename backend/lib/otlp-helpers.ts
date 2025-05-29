@@ -50,7 +50,10 @@ export function getMetricType(metric: any): string {
 
 // Extract metric value from datapoint
 export function extractMetricValue(dataPoint: any): number {
-  return dataPoint.asInt || dataPoint.asDouble || dataPoint.sum || 0;
+  if (dataPoint.asInt !== undefined) {
+    return parseInt(dataPoint.asInt, 10);
+  }
+  return dataPoint.asDouble || dataPoint.sum || 0;
 }
 
 // Check if a metric should trigger session processing
@@ -65,4 +68,82 @@ export function shouldProcessSession(metricName: string): boolean {
 export function isMessageMetric(metricName: string): boolean {
   return metricName === 'conversation.message.cost' || 
          metricName === 'conversation.message.tokens';
+}
+
+// Extract key data from OTLP metrics for logging
+export function extractOTLPData(data: any) {
+  const extracted: any = {
+    metrics: [],
+    sessions: new Set(),
+    users: new Set(),
+    models: new Set(),
+    totalCost: 0,
+    totalTokens: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheCreation: 0
+    },
+    totalLinesOfCode: 0
+  };
+
+  const resourceMetrics = data.resourceMetrics || [];
+
+  for (const rm of resourceMetrics) {
+    const resourceAttrs = extractAttributes(rm.resource?.attributes || []);
+    const scopeMetrics = rm.scopeMetrics || [];
+
+    for (const sm of scopeMetrics) {
+      const metrics = sm.metrics || [];
+
+      for (const metric of metrics) {
+        const metricName = metric.name;
+        extracted.metrics.push(metricName);
+
+        // Process data points for sum metrics
+        if (metric.sum) {
+          const dataPoints = metric.sum.dataPoints || [];
+          for (const dp of dataPoints) {
+            const value = extractMetricValue(dp);
+            const sessionInfo = extractSessionInfo(dp.attributes || [], rm.resource?.attributes || []);
+            
+            if (sessionInfo.sessionId) {
+              extracted.sessions.add(sessionInfo.sessionId);
+            }
+            if (sessionInfo.userId) {
+              extracted.users.add(sessionInfo.userId);
+            }
+            if (sessionInfo.model) {
+              extracted.models.add(sessionInfo.model);
+            }
+
+            // Track costs, tokens, and lines of code
+            if (metricName === 'claude_code.cost.usage') {
+              extracted.totalCost += value;
+            } else if (metricName === 'claude_code.token.usage') {
+              const tokenType = sessionInfo.attrs.type;
+              const tokens = parseTokenMetric(value, tokenType);
+              extracted.totalTokens.input += tokens.inputTokens;
+              extracted.totalTokens.output += tokens.outputTokens;
+              extracted.totalTokens.cacheRead += tokens.cacheReadTokens;
+              extracted.totalTokens.cacheCreation += tokens.cacheCreationTokens;
+            } else if (metricName === 'claude_code.lines_of_code.count') {
+              extracted.totalLinesOfCode += value;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    uniqueMetrics: [...new Set(extracted.metrics)],
+    sessionCount: extracted.sessions.size,
+    sessions: [...extracted.sessions],
+    userCount: extracted.users.size,
+    models: [...extracted.models],
+    totalCost: extracted.totalCost,
+    totalTokens: extracted.totalTokens,
+    totalLinesOfCode: extracted.totalLinesOfCode
+  };
 }

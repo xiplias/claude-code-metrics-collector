@@ -85,3 +85,9 @@ React app in `src/` with:
 - Only data ingestion endpoints (POST /metrics, /events, /v1/metrics) are logged
 - CORS enabled for cross-origin frontend requests
 - Session tracking based on sessionId extraction from OTLP attributes
+
+## Database Migrations
+
+- Use Kysely for type-safe database migrations
+- Migrations located in `backend/migrations/`
+- Automatically run on server startup

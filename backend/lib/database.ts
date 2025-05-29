@@ -44,7 +44,8 @@ db.run(`
     request_body TEXT,
     response_status INTEGER,
     response_time_ms INTEGER,
-    error_message TEXT
+    error_message TEXT,
+    extracted_data TEXT
   )
 `);
 
@@ -96,8 +97,8 @@ export const insertEvent = db.prepare(`
 `);
 
 export const insertLog = db.prepare(`
-  INSERT INTO request_logs (endpoint, method, ip_address, user_agent, request_body, response_status, response_time_ms, error_message)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO request_logs (endpoint, method, ip_address, user_agent, request_body, response_status, response_time_ms, error_message, extracted_data)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 export const upsertSession = db.prepare(`

@@ -11,8 +11,8 @@ export async function handleGetSessions(req: Request) {
   return Response.json({ sessions }, { headers: corsHeaders });
 }
 
-export async function handleGetSessionById(req: Request, params: { id: string }) {
-  const sessionId = params.id;
+export async function handleGetSessionById(req: Request & { params: { id: string } }) {
+  const sessionId = req.params.id;
   const sessionDetails = getSessionDetails(sessionId);
 
   if (!sessionDetails) {

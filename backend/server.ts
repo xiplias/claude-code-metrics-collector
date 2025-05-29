@@ -71,8 +71,8 @@ const server = serve({
 
     // GET /api/sessions/:id - Get individual session details
     "/api/sessions/:id": {
-      async GET(req, params) {
-        return handleGetSessionById(req, params);
+      async GET(req) {
+        return handleGetSessionById(req);
       },
     },
 

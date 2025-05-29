@@ -33,7 +33,8 @@ export function logRequest(
   responseStatus: number,
   responseTime: number,
   errorMessage?: string,
-  requestBody?: string
+  requestBody?: string,
+  extractedData?: any
 ) {
   // Only log POST requests that are recording data (metrics, events, OTLP)
   const isDataIngestion =
@@ -62,7 +63,8 @@ export function logRequest(
       requestBody || null,
       responseStatus,
       responseTime,
-      errorMessage || null
+      errorMessage || null,
+      extractedData ? JSON.stringify(extractedData) : null
     );
     console.log(
       `[${new Date().toISOString()}] DATA RECEIVED: ${

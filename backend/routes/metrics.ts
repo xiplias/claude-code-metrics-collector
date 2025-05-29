@@ -1,6 +1,7 @@
 import { corsHeaders, logRequest } from "../lib/utils";
 import { recordMetric, getMetrics, validateMetricData, parseMetricData } from "../lib/services/metrics-service";
 import { validateOTLPContentType, parseOTLPData, processOTLPData } from "../lib/services/otlp-service";
+import { extractOTLPData } from "../lib/otlp-helpers";
 
 export async function handlePostMetrics(req: Request) {
   const startTime = Date.now();
@@ -74,10 +75,13 @@ export async function handlePostV1Metrics(req: Request) {
     const data = await parseOTLPData(req);
     requestBody = JSON.stringify(data);
 
+    // Extract key data from OTLP metrics
+    const extractedData = extractOTLPData(data);
+
     const processingResult = processOTLPData(data);
     if (!processingResult.success) {
       const responseTime = Date.now() - startTime;
-      logRequest(req, "/v1/metrics", 500, responseTime, processingResult.error, requestBody);
+      logRequest(req, "/v1/metrics", 500, responseTime, processingResult.error, requestBody, extractedData);
       
       return Response.json(
         { error: "Failed to process OTLP metrics", message: processingResult.error },
@@ -86,7 +90,7 @@ export async function handlePostV1Metrics(req: Request) {
     }
 
     const responseTime = Date.now() - startTime;
-    logRequest(req, "/v1/metrics", 200, responseTime, undefined, requestBody);
+    logRequest(req, "/v1/metrics", 200, responseTime, undefined, requestBody, extractedData);
 
     // OTLP expects an empty response on success
     return new Response(null, { status: 200, headers: corsHeaders });
