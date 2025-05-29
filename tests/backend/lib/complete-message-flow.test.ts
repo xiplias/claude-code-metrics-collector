@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { processOTLPMetrics } from "../../../backend/lib/otlp";
-import { db } from "../../../backend/lib/database";
+import { processOTLPMetricsTest } from "../../../backend/lib/otlp-test";
+import { testDb } from "../../../backend/lib/test-database";
 
 describe("Complete Message Flow Integration", () => {
   beforeEach(() => {
     // Clean up before each test
-    db.exec("DELETE FROM messages WHERE message_id LIKE 'flow-%'");
-    db.exec("DELETE FROM sessions WHERE session_id LIKE 'flow-%'");
-    db.exec("DELETE FROM metrics WHERE session_id LIKE 'flow-%'");
+    testDb.exec("DELETE FROM messages WHERE message_id LIKE 'flow-%'");
+    testDb.exec("DELETE FROM sessions WHERE session_id LIKE 'flow-%'");
+    testDb.exec("DELETE FROM metrics WHERE session_id LIKE 'flow-%'");
   });
 
   describe("Real-world OTLP message scenarios", () => {
@@ -73,7 +73,11 @@ describe("Complete Message Flow Integration", () => {
       // 3. User message tokens
       const userMessageTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: sessionId } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -123,7 +127,11 @@ describe("Complete Message Flow Integration", () => {
       // 5. Assistant message tokens (input and output)
       const assistantInputTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: sessionId } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -144,7 +152,11 @@ describe("Complete Message Flow Integration", () => {
 
       const assistantOutputTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: sessionId } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -164,21 +176,21 @@ describe("Complete Message Flow Integration", () => {
       };
 
       // Process all metrics in realistic order
-      processOTLPMetrics(sessionInit);
-      processOTLPMetrics(userMessageCost);
-      processOTLPMetrics(userMessageTokens);
-      processOTLPMetrics(assistantMessageCost);
-      processOTLPMetrics(assistantInputTokens);
-      processOTLPMetrics(assistantOutputTokens);
+      processOTLPMetricsTest(sessionInit);
+      processOTLPMetricsTest(userMessageCost);
+      processOTLPMetricsTest(userMessageTokens);
+      processOTLPMetricsTest(assistantMessageCost);
+      processOTLPMetricsTest(assistantInputTokens);
+      processOTLPMetricsTest(assistantOutputTokens);
 
       // Verify session was created
-      const session = db.query("SELECT * FROM sessions WHERE session_id = ?").get(sessionId);
+      const session = testDb.query("SELECT * FROM sessions WHERE session_id = ?").get(sessionId);
       expect(session).toBeTruthy();
       expect(session.user_id).toBe(userId);
       expect(session.total_cost).toBe(0.15);
 
       // Verify both messages were created
-      const messages = db.query("SELECT * FROM messages WHERE session_id = ? ORDER BY message_id").all(sessionId);
+      const messages = testDb.query("SELECT * FROM messages WHERE session_id = ? ORDER BY message_id").all(sessionId);
       expect(messages.length).toBe(2);
 
       // Verify user message
@@ -200,7 +212,7 @@ describe("Complete Message Flow Integration", () => {
       expect(assistantMessage.output_tokens).toBe(800);
 
       // Verify cost metrics were stored with session_id
-      const costMetrics = db.query(`
+      const costMetrics = testDb.query(`
         SELECT COUNT(*) as count 
         FROM metrics 
         WHERE session_id = ? AND metric_name = 'conversation.message.cost'
@@ -208,7 +220,7 @@ describe("Complete Message Flow Integration", () => {
       expect(costMetrics.count).toBe(2);
 
       // Verify token metrics were stored (may not have session_id)
-      const tokenMetrics = db.query(`
+      const tokenMetrics = testDb.query(`
         SELECT COUNT(*) as count 
         FROM metrics 
         WHERE metric_name = 'conversation.message.tokens'
@@ -239,14 +251,14 @@ describe("Complete Message Flow Integration", () => {
         }]
       };
 
-      processOTLPMetrics(messageWithoutSession);
+      processOTLPMetricsTest(messageWithoutSession);
 
       // Should not create message
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("flow-msg-orphan");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("flow-msg-orphan");
       expect(messages.length).toBe(0);
 
       // But should still store the metric
-      const metrics = db.query("SELECT * FROM metrics WHERE metric_name = 'conversation.message.cost'").all();
+      const metrics = testDb.query("SELECT * FROM metrics WHERE metric_name = 'conversation.message.cost'").all();
       const orphanMetric = metrics.find((m: any) => {
         try {
           const labels = JSON.parse(m.labels);
@@ -311,7 +323,11 @@ describe("Complete Message Flow Integration", () => {
 
       const cacheReadTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: sessionId } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -332,7 +348,11 @@ describe("Complete Message Flow Integration", () => {
 
       const cacheCreationTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: sessionId } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -351,13 +371,13 @@ describe("Complete Message Flow Integration", () => {
         }]
       };
 
-      processOTLPMetrics(sessionMetric);
-      processOTLPMetrics(messageCost);
-      processOTLPMetrics(cacheReadTokens);
-      processOTLPMetrics(cacheCreationTokens);
+      processOTLPMetricsTest(sessionMetric);
+      processOTLPMetricsTest(messageCost);
+      processOTLPMetricsTest(cacheReadTokens);
+      processOTLPMetricsTest(cacheCreationTokens);
 
       // Verify cache tokens were recorded
-      const message = db.query("SELECT * FROM messages WHERE message_id = ?").get("flow-msg-cache");
+      const message = testDb.query("SELECT * FROM messages WHERE message_id = ?").get("flow-msg-cache");
       expect(message).toBeTruthy();
       expect(message.cache_read_tokens).toBe(500);
       expect(message.cache_creation_tokens).toBe(200);

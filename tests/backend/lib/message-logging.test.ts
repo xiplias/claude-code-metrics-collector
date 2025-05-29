@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { processOTLPMetrics } from "../../../backend/lib/otlp";
-import { db } from "../../../backend/lib/database";
+import { processOTLPMetricsTest } from "../../../backend/lib/otlp-test";
+import { testDb } from "../../../backend/lib/test-database";
 
 describe("Message Logging", () => {
   beforeEach(() => {
     // Clean up messages table before each test
-    db.exec("DELETE FROM messages");
-    db.exec("DELETE FROM sessions");
+    testDb.exec("DELETE FROM messages");
+    testDb.exec("DELETE FROM sessions");
   });
 
   describe("conversation.message.cost metrics", () => {
@@ -40,10 +40,10 @@ describe("Message Logging", () => {
       };
 
       // Process the OTLP data
-      processOTLPMetrics(otlpData);
+      processOTLPMetricsTest(otlpData);
 
       // Check that a message was inserted
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("msg-001");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("msg-001");
       
       expect(messages.length).toBe(1);
       
@@ -82,10 +82,10 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(otlpData);
+      processOTLPMetricsTest(otlpData);
 
       // Should not create a message without session_id
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("msg-002");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("msg-002");
       expect(messages.length).toBe(0);
     });
 
@@ -114,10 +114,10 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(otlpData);
+      processOTLPMetricsTest(otlpData);
 
       // Should not create a message without message_id
-      const messages = db.query("SELECT * FROM messages").all();
+      const messages = testDb.query("SELECT * FROM messages").all();
       expect(messages.length).toBe(0);
     });
   });
@@ -150,13 +150,15 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(costMetric);
+      processOTLPMetricsTest(costMetric);
 
       // Then send token metrics
       const tokenMetric = {
         resourceMetrics: [{
           resource: {
-            attributes: []
+            attributes: [
+              { key: "session_id", value: { stringValue: "test-session-123" } }
+            ]
           },
           scopeMetrics: [{
             metrics: [{
@@ -176,10 +178,10 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(tokenMetric);
+      processOTLPMetricsTest(tokenMetric);
 
       // Check that tokens were updated
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("msg-003");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("msg-003");
       
       expect(messages.length).toBe(1);
       
@@ -214,12 +216,16 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(costMetric);
+      processOTLPMetricsTest(costMetric);
 
       // Send input tokens
       const inputTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: "test-session-123" } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -241,7 +247,11 @@ describe("Message Logging", () => {
       // Send output tokens
       const outputTokens = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: "test-session-123" } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -260,11 +270,11 @@ describe("Message Logging", () => {
         }]
       };
 
-      processOTLPMetrics(inputTokens);
-      processOTLPMetrics(outputTokens);
+      processOTLPMetricsTest(inputTokens);
+      processOTLPMetricsTest(outputTokens);
 
       // Check that both token types were recorded
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("msg-004");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("msg-004");
       
       expect(messages.length).toBe(1);
       
@@ -276,7 +286,11 @@ describe("Message Logging", () => {
     it("should not update tokens for non-existent message", () => {
       const tokenMetric = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: "test-session-123" } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -295,11 +309,16 @@ describe("Message Logging", () => {
         }]
       };
 
-      // This should not crash, but also shouldn't create any messages
-      expect(() => processOTLPMetrics(tokenMetric)).not.toThrow();
+      // This should not crash, and will create a message with 0 cost and the token values
+      expect(() => processOTLPMetricsTest(tokenMetric)).not.toThrow();
       
-      const messages = db.query("SELECT * FROM messages").all();
-      expect(messages.length).toBe(0);
+      const messages = testDb.query("SELECT * FROM messages").all();
+      expect(messages.length).toBe(1);
+      
+      const message = messages[0];
+      expect(message.message_id).toBe("non-existent-msg");
+      expect(message.cost).toBe(0); // No cost metric was sent
+      expect(message.input_tokens).toBe(1000);
     });
   });
 
@@ -363,7 +382,11 @@ describe("Message Logging", () => {
       // 3. Message token metrics
       const tokenMetrics = {
         resourceMetrics: [{
-          resource: { attributes: [] },
+          resource: {
+            attributes: [
+              { key: "session_id", value: { stringValue: "session-e2e" } }
+            ]
+          },
           scopeMetrics: [{
             metrics: [{
               name: "conversation.message.tokens",
@@ -383,17 +406,17 @@ describe("Message Logging", () => {
       };
 
       // Process in order
-      processOTLPMetrics(sessionMetric);
-      processOTLPMetrics(messageCostMetric);
-      processOTLPMetrics(tokenMetrics);
+      processOTLPMetricsTest(sessionMetric);
+      processOTLPMetricsTest(messageCostMetric);
+      processOTLPMetricsTest(tokenMetrics);
 
       // Verify session was created
-      const sessions = db.query("SELECT * FROM sessions WHERE session_id = ?").all("session-e2e");
+      const sessions = testDb.query("SELECT * FROM sessions WHERE session_id = ?").all("session-e2e");
       expect(sessions.length).toBe(1);
       expect(sessions[0].user_id).toBe("user-e2e");
 
       // Verify message was created and updated
-      const messages = db.query("SELECT * FROM messages WHERE message_id = ?").all("msg-e2e");
+      const messages = testDb.query("SELECT * FROM messages WHERE message_id = ?").all("msg-e2e");
       expect(messages.length).toBe(1);
       
       const message = messages[0];
