@@ -10,16 +10,22 @@
     "start": "NODE_ENV=production bun backend/server.ts",
     "build": "bun run build.ts",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "migrate:up": "bun backend/migrations/migrator.ts up",
+    "migrate:down": "bun backend/migrations/migrator.ts down",
+    "migrate:latest": "bun backend/migrations/migrator.ts latest"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.12",
     "bun-plugin-tailwind": "^0.0.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "kysely": "^0.28.2",
+    "kysely-bun-sqlite": "^0.4.0",
     "lucide-react": "^0.511.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
