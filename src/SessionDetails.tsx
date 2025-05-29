@@ -1,10 +1,28 @@
 import { useEffect, useState } from "react";
 import { useRoute, Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock, DollarSign, Hash, User, Activity } from "lucide-react";
-import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  ArrowLeft,
+  Clock,
+  DollarSign,
+  Hash,
+  User,
+  Activity,
+} from "lucide-react";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 interface SessionDetail {
@@ -47,7 +65,7 @@ interface SessionDetail {
 }
 
 export function SessionDetails() {
-  const [match, params] = useRoute("/session/:id");
+  const [match, params] = useRoute("/sessions/:id");
   const sessionId = params?.id;
   const [data, setData] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,19 +77,21 @@ export function SessionDetails() {
     const fetchSession = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/session/${sessionId}`);
+        const response = await fetch(`/api/sessions/${sessionId}`);
         if (!response.ok) {
           if (response.status === 404) {
             throw new Error(`Session ${sessionId} not found`);
           }
-          throw new Error(`Failed to fetch session details: ${response.status}`);
+          throw new Error(
+            `Failed to fetch session details: ${response.status}`
+          );
         }
         const sessionData = await response.json();
         setData(sessionData);
         setError(null);
       } catch (err) {
-        console.error('Error fetching session:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        console.error("Error fetching session:", err);
+        setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setLoading(false);
       }
@@ -92,7 +112,9 @@ export function SessionDetails() {
           </Button>
         </Link>
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-muted-foreground">Loading session details...</div>
+          <div className="text-muted-foreground">
+            Loading session details...
+          </div>
         </div>
       </div>
     );
@@ -108,14 +130,18 @@ export function SessionDetails() {
           </Button>
         </Link>
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-destructive">Error: {error || 'Session not found'}</div>
+          <div className="text-destructive">
+            Error: {error || "Session not found"}
+          </div>
         </div>
       </div>
     );
   }
 
   const session = data.session;
-  const duration = new Date(session.last_seen).getTime() - new Date(session.first_seen).getTime();
+  const duration =
+    new Date(session.last_seen).getTime() -
+    new Date(session.first_seen).getTime();
   const durationMinutes = Math.floor(duration / 1000 / 60);
 
   const messageChartData = data.messages.map((msg, index) => ({
@@ -159,7 +185,9 @@ export function SessionDetails() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${session.total_cost.toFixed(4)}</div>
+            <div className="text-2xl font-bold">
+              ${session.total_cost.toFixed(4)}
+            </div>
             <p className="text-xs text-muted-foreground">
               {data.messages.length} messages
             </p>
@@ -173,10 +201,13 @@ export function SessionDetails() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {(session.total_input_tokens + session.total_output_tokens).toLocaleString()}
+              {(
+                session.total_input_tokens + session.total_output_tokens
+              ).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
-              I: {session.total_input_tokens.toLocaleString()} / O: {session.total_output_tokens.toLocaleString()}
+              I: {session.total_input_tokens.toLocaleString()} / O:{" "}
+              {session.total_output_tokens.toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -189,7 +220,8 @@ export function SessionDetails() {
           <CardContent>
             <div className="text-2xl font-bold">{durationMinutes}m</div>
             <p className="text-xs text-muted-foreground">
-              {new Date(session.first_seen).toLocaleTimeString()} - {new Date(session.last_seen).toLocaleTimeString()}
+              {new Date(session.first_seen).toLocaleTimeString()} -{" "}
+              {new Date(session.last_seen).toLocaleTimeString()}
             </p>
           </CardContent>
         </Card>
@@ -201,7 +233,12 @@ export function SessionDetails() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {((session.total_cache_read_tokens / (session.total_input_tokens || 1)) * 100).toFixed(1)}%
+              {(
+                (session.total_cache_read_tokens /
+                  (session.total_input_tokens || 1)) *
+                100
+              ).toFixed(1)}
+              %
             </div>
             <p className="text-xs text-muted-foreground">
               {session.total_cache_read_tokens.toLocaleString()} cached tokens
@@ -213,16 +250,20 @@ export function SessionDetails() {
       <Card>
         <CardHeader>
           <CardTitle>Session Information</CardTitle>
-          <CardDescription>Details about this Claude Code session</CardDescription>
+          <CardDescription>
+            Details about this Claude Code session
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Session ID</span>
-            <code className="text-xs bg-muted px-2 py-1 rounded">{session.session_id}</code>
+            <code className="text-xs bg-muted px-2 py-1 rounded">
+              {session.session_id}
+            </code>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">User</span>
-            <span className="text-sm">{session.user_email || 'Unknown'}</span>
+            <span className="text-sm">{session.user_email || "Unknown"}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Model</span>
@@ -249,8 +290,16 @@ export function SessionDetails() {
               <YAxis yAxisId="right" orientation="right" />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
-              <Bar yAxisId="right" dataKey="inputTokens" fill="var(--color-inputTokens)" />
-              <Bar yAxisId="right" dataKey="outputTokens" fill="var(--color-outputTokens)" />
+              <Bar
+                yAxisId="right"
+                dataKey="inputTokens"
+                fill="var(--color-inputTokens)"
+              />
+              <Bar
+                yAxisId="right"
+                dataKey="outputTokens"
+                fill="var(--color-outputTokens)"
+              />
             </BarChart>
           </ChartContainer>
         </CardContent>
@@ -265,7 +314,10 @@ export function SessionDetails() {
           <div className="space-y-4">
             {data.events.length > 0 ? (
               data.events.map((event) => (
-                <div key={event.id} className="flex items-center justify-between border-b pb-2">
+                <div
+                  key={event.id}
+                  className="flex items-center justify-between border-b pb-2"
+                >
                   <div className="space-y-1">
                     <p className="text-sm font-medium">
                       {event.event_type}: {event.event_name}

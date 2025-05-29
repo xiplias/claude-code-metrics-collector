@@ -15,34 +15,30 @@ export function App() {
       <header className="border-b">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Link href="/">
-              <a className="flex items-center gap-2">
-                <Code2 className="h-6 w-6" />
-                <h1 className="text-2xl font-bold">Claude Code Metrics Collector</h1>
-              </a>
+            <Link href="/" className="flex items-center gap-2">
+              <Code2 className="h-6 w-6" />
+              <h1 className="text-2xl font-bold">
+                Claude Code Metrics Collector
+              </h1>
             </Link>
             <nav className="flex gap-2">
               <Link href="/">
-                <a>
-                  <Button
-                    variant={location === "/" ? "default" : "outline"}
-                    className="gap-2"
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    Dashboard
-                  </Button>
-                </a>
+                <Button
+                  variant={location === "/" ? "default" : "outline"}
+                  className="gap-2"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  Dashboard
+                </Button>
               </Link>
               <Link href="/logs">
-                <a>
-                  <Button
-                    variant={location === "/logs" ? "default" : "outline"}
-                    className="gap-2"
-                  >
-                    <ScrollText className="h-4 w-4" />
-                    Logs
-                  </Button>
-                </a>
+                <Button
+                  variant={location === "/logs" ? "default" : "outline"}
+                  className="gap-2"
+                >
+                  <ScrollText className="h-4 w-4" />
+                  Logs
+                </Button>
               </Link>
             </nav>
           </div>
@@ -52,7 +48,7 @@ export function App() {
       <main className="container mx-auto px-4 py-8">
         <Route path="/" component={Dashboard} />
         <Route path="/logs" component={Logs} />
-        <Route path="/session/:id" component={SessionDetails} />
+        <Route path="/sessions/:id" component={SessionDetails} />
       </main>
     </div>
   );

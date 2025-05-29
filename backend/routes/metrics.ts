@@ -1,146 +1,141 @@
-import { db, insertMetric } from "../database";
-import { corsHeaders, logRequest } from "../utils";
-import { processOTLPMetrics } from "../otlp";
+import { db, insertMetric } from "../lib/database";
+import { corsHeaders, logRequest } from "../lib/utils";
+import { processOTLPMetrics } from "../lib/otlp";
 
-export const metricsRoutes = {
-  // POST /metrics - Record a metric
-  "/metrics": {
-    async POST(req: Request) {
-      const startTime = Date.now();
-      let requestBody: string | undefined;
+export async function handlePostMetrics(req: Request) {
+  const startTime = Date.now();
+  let requestBody: string | undefined;
 
-      try {
-        const body = await req.json();
-        requestBody = JSON.stringify(body);
+  try {
+    const data = await req.json();
+    requestBody = JSON.stringify(data);
 
-        insertMetric.run(
-          body.metric_type || "gauge",
-          body.metric_name,
-          body.metric_value || 0,
-          JSON.stringify(body.labels || {}),
-          body.project_path || null,
-          body.user_id || null,
-          body.session_id || null,
-          JSON.stringify(body.metadata || {})
-        );
+    insertMetric.run(
+      data.metric_type || "counter",
+      data.metric_name,
+      data.metric_value || 1,
+      JSON.stringify(data.labels || {}),
+      data.project_path || null,
+      data.user_id || null,
+      data.session_id || null,
+      JSON.stringify(data.metadata || {})
+    );
 
-        const responseTime = Date.now() - startTime;
-        logRequest(req, "/metrics", 200, responseTime, undefined, requestBody);
+    const responseTime = Date.now() - startTime;
+    logRequest(
+      req,
+      "/metrics",
+      200,
+      responseTime,
+      undefined,
+      requestBody
+    );
 
-        return Response.json({ success: true }, { headers: corsHeaders });
-      } catch (error) {
-        const responseTime = Date.now() - startTime;
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        logRequest(req, "/metrics", 500, responseTime, errorMessage, requestBody);
+    return Response.json(
+      { success: true, message: "Metric recorded" },
+      { headers: corsHeaders }
+    );
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    logRequest(
+      req,
+      "/metrics",
+      500,
+      responseTime,
+      errorMessage,
+      requestBody
+    );
 
-        return Response.json(
-          { error: "Failed to record metric", message: errorMessage },
-          { headers: corsHeaders, status: 500 }
-        );
-      }
-    },
+    return Response.json(
+      { error: "Failed to record metric", message: errorMessage },
+      { headers: corsHeaders, status: 500 }
+    );
+  }
+}
 
-    // GET /metrics - Query metrics
-    async GET(req: Request) {
-      const startTime = Date.now();
+export async function handleGetMetrics(req: Request) {
+  const url = new URL(req.url);
+  const limit = parseInt(url.searchParams.get("limit") || "100");
+  const offset = parseInt(url.searchParams.get("offset") || "0");
 
-      try {
-        const url = new URL(req.url);
-        const limit = parseInt(url.searchParams.get("limit") || "100");
-        const offset = parseInt(url.searchParams.get("offset") || "0");
+  const metrics = db
+    .query(
+      `
+      SELECT * FROM metrics 
+      ORDER BY timestamp DESC 
+      LIMIT ? OFFSET ?
+    `
+    )
+    .all(limit, offset);
 
-        const query = `
-          SELECT * FROM metrics
-          ORDER BY timestamp DESC
-          LIMIT ? OFFSET ?
-        `;
+  return Response.json({ metrics }, { headers: corsHeaders });
+}
 
-        const metrics = db.query(query).all(limit, offset);
+export async function handlePostV1Metrics(req: Request) {
+  const startTime = Date.now();
+  let requestBody: string | undefined;
 
-        const responseTime = Date.now() - startTime;
-        logRequest(req, "/metrics", 200, responseTime);
+  try {
+    const contentType = req.headers.get("content-type") || "";
+    let data;
 
-        return Response.json(metrics, { headers: corsHeaders });
-      } catch (error) {
-        const responseTime = Date.now() - startTime;
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        logRequest(req, "/metrics", 500, responseTime, errorMessage);
+    if (contentType.includes("application/x-protobuf")) {
+      // Handle protobuf format (simplified - in production you'd use proper protobuf decoding)
+      const responseTime = Date.now() - startTime;
+      logRequest(
+        req,
+        "/v1/metrics",
+        400,
+        responseTime,
+        "Protobuf format not supported"
+      );
 
-        return Response.json(
-          { error: "Failed to query metrics", message: errorMessage },
-          { headers: corsHeaders, status: 500 }
-        );
-      }
-    },
-  },
+      return Response.json(
+        {
+          error:
+            "Protobuf format not yet supported. Please use JSON format by setting OTEL_EXPORTER_OTLP_PROTOCOL=http/json",
+        },
+        { headers: corsHeaders, status: 400 }
+      );
+    } else {
+      // Handle JSON format
+      data = await req.json();
+      requestBody = JSON.stringify(data);
+    }
 
-  // POST /v1/metrics - OTLP endpoint
-  "/v1/metrics": {
-    async POST(req: Request) {
-      const startTime = Date.now();
-      let requestBody: string | undefined;
+    // Process OTLP metrics
+    processOTLPMetrics(data);
 
-      try {
-        const contentType = req.headers.get("content-type") || "";
-        let data;
+    const responseTime = Date.now() - startTime;
+    logRequest(
+      req,
+      "/v1/metrics",
+      200,
+      responseTime,
+      undefined,
+      requestBody
+    );
 
-        if (contentType.includes("application/x-protobuf")) {
-          // Handle protobuf format (simplified - in production you'd use proper protobuf decoding)
-          const responseTime = Date.now() - startTime;
-          logRequest(
-            req,
-            "/v1/metrics",
-            400,
-            responseTime,
-            "Protobuf format not supported"
-          );
+    // OTLP expects an empty response on success
+    return new Response(null, { status: 200, headers: corsHeaders });
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    logRequest(
+      req,
+      "/v1/metrics",
+      500,
+      responseTime,
+      errorMessage,
+      requestBody
+    );
 
-          return Response.json(
-            {
-              error:
-                "Protobuf format not yet supported. Please use JSON format by setting OTEL_EXPORTER_OTLP_PROTOCOL=http/json",
-            },
-            { headers: corsHeaders, status: 400 }
-          );
-        } else {
-          // Handle JSON format
-          data = await req.json();
-          requestBody = JSON.stringify(data);
-        }
-
-        // Process OTLP metrics
-        processOTLPMetrics(data);
-
-        const responseTime = Date.now() - startTime;
-        logRequest(
-          req,
-          "/v1/metrics",
-          200,
-          responseTime,
-          undefined,
-          requestBody
-        );
-
-        // OTLP expects an empty response on success
-        return new Response(null, { status: 200, headers: corsHeaders });
-      } catch (error) {
-        const responseTime = Date.now() - startTime;
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        logRequest(
-          req,
-          "/v1/metrics",
-          500,
-          responseTime,
-          errorMessage,
-          requestBody
-        );
-
-        return Response.json(
-          { error: "Failed to process OTLP metrics", message: errorMessage },
-          { headers: corsHeaders, status: 500 }
-        );
-      }
-    },
-  },
-};
+    return Response.json(
+      { error: "Failed to process OTLP metrics", message: errorMessage },
+      { headers: corsHeaders, status: 500 }
+    );
+  }
+}

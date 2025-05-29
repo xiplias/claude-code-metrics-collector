@@ -1,22 +1,17 @@
-import { corsHeaders, logRequest } from "../utils";
+import { corsHeaders } from "../lib/utils";
 
-export const healthRoutes = {
-  // GET /health - Health check
-  "/health": {
-    async GET(req: Request) {
-      const startTime = Date.now();
-      const responseTime = Date.now() - startTime;
-      
-      logRequest(req, "/health", 200, responseTime);
-      
-      return Response.json(
-        { 
-          status: "healthy", 
-          timestamp: new Date().toISOString(),
-          uptime: process.uptime()
-        },
-        { headers: corsHeaders }
-      );
+export async function handleGetHealth(req: Request) {
+  const response = {
+    status: "ok",
+    service: "claude-metrics-server",
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      metrics: "/metrics",
+      events: "/events",
+      stats: "/stats",
+      otlp: "/v1/metrics",
     },
-  },
-};
+  };
+
+  return Response.json(response, { headers: corsHeaders });
+}

@@ -32,7 +32,7 @@ export function Logs() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/logs?limit=200');
+      const response = await fetch('/api/logs?limit=200');
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
       setLogs(data.logs || []);

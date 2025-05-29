@@ -1,9 +1,42 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, Pie, PieChart, XAxis, YAxis, Cell } from "recharts";
-import { Activity, Clock, Code2, FileText, GitBranch, Package, Terminal, Users, DollarSign, Hash } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+  Cell,
+} from "recharts";
+import {
+  Activity,
+  Clock,
+  Code2,
+  FileText,
+  GitBranch,
+  Package,
+  Terminal,
+  Users,
+  DollarSign,
+  Hash,
+} from "lucide-react";
 
 interface MetricStat {
   metric_name: string;
@@ -58,7 +91,14 @@ interface DashboardData {
   recentSessions: Session[];
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+const COLORS = [
+  "#0088FE",
+  "#00C49F",
+  "#FFBB28",
+  "#FF8042",
+  "#8884D8",
+  "#82CA9D",
+];
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -68,13 +108,13 @@ export function Dashboard() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/stats');
-      if (!response.ok) throw new Error('Failed to fetch stats');
+      const response = await fetch("/api/stats");
+      if (!response.ok) throw new Error("Failed to fetch stats");
       const stats = await response.json();
       setData(stats);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -105,10 +145,11 @@ export function Dashboard() {
   if (!data) return null;
 
   // Process data for charts
-  const commandMetrics = data.metrics.filter(m => 
-    m.metric_name.includes('command') || 
-    m.metric_name.includes('tool') ||
-    m.metric_name.includes('api')
+  const commandMetrics = data.metrics.filter(
+    (m) =>
+      m.metric_name.includes("command") ||
+      m.metric_name.includes("tool") ||
+      m.metric_name.includes("api")
   );
 
   const eventsByType = data.events.reduce((acc, event) => {
@@ -121,16 +162,16 @@ export function Dashboard() {
 
   const eventTypeData = Object.entries(eventsByType).map(([name, value]) => ({
     name,
-    value
+    value,
   }));
 
   const topCommands = commandMetrics
     .sort((a, b) => b.count - a.count)
     .slice(0, 10)
-    .map(m => ({
-      name: m.metric_name.replace('command.', '').replace('tool.', ''),
+    .map((m) => ({
+      name: m.metric_name.replace("command.", "").replace("tool.", ""),
       count: m.count,
-      avg: Math.round(m.average * 100) / 100
+      avg: Math.round(m.average * 100) / 100,
     }));
 
   const chartConfig = {
@@ -148,18 +189,25 @@ export function Dashboard() {
   const totalMetrics = data.metrics.reduce((sum, m) => sum + m.count, 0);
   const totalEvents = data.events.reduce((sum, e) => sum + e.count, 0);
   const uniqueMetrics = data.metrics.length;
-  const uniqueEvents = new Set(data.events.map(e => e.event_name)).size;
-  
+  const uniqueEvents = new Set(data.events.map((e) => e.event_name)).size;
+
   // Calculate total tokens (input + output only, cache tokens are a subset of input)
-  const totalTokens = (data.sessions?.total_input_tokens || 0) + 
-                     (data.sessions?.total_output_tokens || 0);
+  const totalTokens =
+    (data.sessions?.total_input_tokens || 0) +
+    (data.sessions?.total_output_tokens || 0);
 
   // Calculate uncached tokens
-  const cachedTokens = (data.sessions?.total_cache_read_tokens || 0) + 
-                      (data.sessions?.total_cache_creation_tokens || 0);
+  const cachedTokens =
+    (data.sessions?.total_cache_read_tokens || 0) +
+    (data.sessions?.total_cache_creation_tokens || 0);
   // Uncached = all output tokens + (input tokens - cache read tokens)
-  const uncachedInputTokens = Math.max(0, (data.sessions?.total_input_tokens || 0) - (data.sessions?.total_cache_read_tokens || 0));
-  const uncachedTokens = (data.sessions?.total_output_tokens || 0) + uncachedInputTokens;
+  const uncachedInputTokens = Math.max(
+    0,
+    (data.sessions?.total_input_tokens || 0) -
+      (data.sessions?.total_cache_read_tokens || 0)
+  );
+  const uncachedTokens =
+    (data.sessions?.total_output_tokens || 0) + uncachedInputTokens;
 
   return (
     <div className="space-y-6">
@@ -170,7 +218,9 @@ export function Dashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.sessions?.total_sessions || 0}</div>
+            <div className="text-2xl font-bold">
+              {data.sessions?.total_sessions || 0}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">
               <div>{data.sessions?.total_messages || 0} messages</div>
               <div>{data.sessions?.unique_users || 0} unique users</div>
@@ -184,10 +234,18 @@ export function Dashboard() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${(data.sessions?.total_cost || 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold">
+              ${(data.sessions?.total_cost || 0).toFixed(2)}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">
-              <div>Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}/session</div>
-              <div>Avg ${(data.sessions?.avg_cost_per_message || 0).toFixed(4)}/message</div>
+              <div>
+                Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}
+                /session
+              </div>
+              <div>
+                Avg ${(data.sessions?.avg_cost_per_message || 0).toFixed(4)}
+                /message
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -198,24 +256,39 @@ export function Dashboard() {
             <Hash className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalTokens.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {totalTokens.toLocaleString()}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">
-              <div>Input: {(data.sessions?.total_input_tokens || 0).toLocaleString()}</div>
-              <div>Output: {(data.sessions?.total_output_tokens || 0).toLocaleString()}</div>
+              <div>
+                Input:{" "}
+                {(data.sessions?.total_input_tokens || 0).toLocaleString()}
+              </div>
+              <div>
+                Output:{" "}
+                {(data.sessions?.total_output_tokens || 0).toLocaleString()}
+              </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Uncached Tokens</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Uncached Tokens
+            </CardTitle>
             <Code2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{uncachedTokens.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {uncachedTokens.toLocaleString()}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">
               <div>Input: {uncachedInputTokens.toLocaleString()}</div>
-              <div>Output: {(data.sessions?.total_output_tokens || 0).toLocaleString()}</div>
+              <div>
+                Output:{" "}
+                {(data.sessions?.total_output_tokens || 0).toLocaleString()}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -226,10 +299,20 @@ export function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{cachedTokens.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {cachedTokens.toLocaleString()}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">
-              <div>Read: {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}</div>
-              <div>Creation: {(data.sessions?.total_cache_creation_tokens || 0).toLocaleString()}</div>
+              <div>
+                Read:{" "}
+                {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}
+              </div>
+              <div>
+                Creation:{" "}
+                {(
+                  data.sessions?.total_cache_creation_tokens || 0
+                ).toLocaleString()}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -242,34 +325,49 @@ export function Dashboard() {
             <CardDescription>Price and token usage per session</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={{
-              cost: {
-                label: "Cost ($)",
-                color: "#0088FE",
-              },
-              inputTokens: {
-                label: "Input Tokens (k)",
-                color: "#00C49F",
-              },
-              outputTokens: {
-                label: "Output Tokens (k)",
-                color: "#FFBB28",
-              },
-            }} className="h-[300px]">
-              <BarChart data={data.recentSessions?.slice(-10).map((session, index) => ({
-                session: `S${index + 1}`,
-                cost: session.total_cost,
-                inputTokens: session.total_input_tokens / 1000, // Scale down for better visualization
-                outputTokens: session.total_output_tokens / 1000,
-              })) || []}>
+            <ChartContainer
+              config={{
+                cost: {
+                  label: "Cost ($)",
+                  color: "#0088FE",
+                },
+                inputTokens: {
+                  label: "Input Tokens (k)",
+                  color: "#00C49F",
+                },
+                outputTokens: {
+                  label: "Output Tokens (k)",
+                  color: "#FFBB28",
+                },
+              }}
+              className="h-[300px]"
+            >
+              <BarChart
+                data={
+                  data.recentSessions?.slice(-10).map((session, index) => ({
+                    session: `S${index + 1}`,
+                    cost: session.total_cost,
+                    inputTokens: session.total_input_tokens / 1000, // Scale down for better visualization
+                    outputTokens: session.total_output_tokens / 1000,
+                  })) || []
+                }
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="session" />
                 <YAxis yAxisId="left" />
                 <YAxis yAxisId="right" orientation="right" />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
-                <Bar yAxisId="right" dataKey="inputTokens" fill="var(--color-inputTokens)" />
-                <Bar yAxisId="right" dataKey="outputTokens" fill="var(--color-outputTokens)" />
+                <Bar
+                  yAxisId="right"
+                  dataKey="inputTokens"
+                  fill="var(--color-inputTokens)"
+                />
+                <Bar
+                  yAxisId="right"
+                  dataKey="outputTokens"
+                  fill="var(--color-outputTokens)"
+                />
               </BarChart>
             </ChartContainer>
           </CardContent>
@@ -286,21 +384,38 @@ export function Dashboard() {
                 <PieChart>
                   <Pie
                     data={[
-                      { name: 'Input', value: data.sessions.total_input_tokens || 0 },
-                      { name: 'Output', value: data.sessions.total_output_tokens || 0 },
-                      { name: 'Cache Read', value: data.sessions.total_cache_read_tokens || 0 },
-                      { name: 'Cache Creation', value: data.sessions.total_cache_creation_tokens || 0 },
-                    ].filter(item => item.value > 0)}
+                      {
+                        name: "Input",
+                        value: data.sessions.total_input_tokens || 0,
+                      },
+                      {
+                        name: "Output",
+                        value: data.sessions.total_output_tokens || 0,
+                      },
+                      {
+                        name: "Cache Read",
+                        value: data.sessions.total_cache_read_tokens || 0,
+                      },
+                      {
+                        name: "Cache Creation",
+                        value: data.sessions.total_cache_creation_tokens || 0,
+                      },
+                    ].filter((item) => item.value > 0)}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) =>
+                      `${name} ${(percent * 100).toFixed(0)}%`
+                    }
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
                   >
                     {[0, 1, 2, 3].map((index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
                     ))}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
@@ -320,23 +435,31 @@ export function Dashboard() {
           <div className="space-y-4">
             {data.recentSessions?.length > 0 ? (
               data.recentSessions.map((session) => (
-                <Link key={session.session_id} href={`/session/${session.session_id}`}>
-                  <a className="flex items-center justify-between border-b pb-2 hover:bg-muted/50 px-2 -mx-2 rounded cursor-pointer transition-colors">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">
-                        {session.user_email || 'Unknown User'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Model: {session.model} • Session: {session.session_id.slice(0, 8)}...
-                      </p>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <p className="text-sm font-semibold">${session.total_cost.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(session.total_input_tokens + session.total_output_tokens).toLocaleString()} tokens
-                      </p>
-                    </div>
-                  </a>
+                <Link
+                  key={session.session_id}
+                  href={`/sessions/${session.session_id}`}
+                  className="flex items-center justify-between border-b pb-2 hover:bg-muted/50 px-2 -mx-2 rounded cursor-pointer transition-colors"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {session.user_email || "Unknown User"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Model: {session.model} • Session:{" "}
+                      {session.session_id.slice(0, 8)}...
+                    </p>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <p className="text-sm font-semibold">
+                      ${session.total_cost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(
+                        session.total_input_tokens + session.total_output_tokens
+                      ).toLocaleString()}{" "}
+                      tokens
+                    </p>
+                  </div>
                 </Link>
               ))
             ) : (

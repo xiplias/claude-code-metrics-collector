@@ -1,4 +1,3 @@
-import { extractAttributes } from "./utils";
 import { 
   insertMetric, 
   upsertSession, 
@@ -6,6 +5,16 @@ import {
   insertMessage, 
   updateMessageTokens 
 } from "./database";
+import { extractAttributes } from "./utils";
+import {
+  extractSessionInfo,
+  parseTokenMetric,
+  parseMessageInfo,
+  getMetricType,
+  extractMetricValue,
+  shouldProcessSession,
+  isMessageMetric
+} from "./otlp-helpers";
 
 // Process OTLP metrics data
 export function processOTLPMetrics(data: any) {
@@ -26,15 +35,11 @@ export function processOTLPMetrics(data: any) {
           // Counter or UpDownCounter
           const dataPoints = metric.sum.dataPoints || [];
           for (const dp of dataPoints) {
-            const attrs = extractAttributes(dp.attributes || []);
-            const value = dp.asInt || dp.asDouble || 0;
+            const value = extractMetricValue(dp);
 
             // Extract session info for Claude Code metrics
-            const sessionId = attrs['session.id'] || attrs.session_id || resourceAttrs['session.id'] || resourceAttrs.session_id;
-            const userId = attrs['user.id'] || attrs.user_id || resourceAttrs['user.id'] || resourceAttrs.user_id;
-            const userEmail = attrs['user.email'] || resourceAttrs['user.email'];
-            const orgId = attrs['organization.id'] || resourceAttrs['organization.id'];
-            const model = attrs.model || resourceAttrs.model;
+            const sessionInfo = extractSessionInfo(dp.attributes || [], rm.resource?.attributes || []);
+            const { sessionId, userId, userEmail, orgId, model, attrs, resourceAttrs } = sessionInfo;
 
             // Create/update session if we have session data
             if (sessionId && metricName === 'claude_code.cost.usage') {
@@ -42,30 +47,22 @@ export function processOTLPMetrics(data: any) {
               updateSessionCost.run(value, 0, 0, 0, 0, sessionId);
             } else if (sessionId && metricName === 'claude_code.token.usage') {
               const tokenType = attrs.type;
-              const inputTokens = tokenType === 'input' ? value : 0;
-              const outputTokens = tokenType === 'output' ? value : 0;
-              const cacheReadTokens = tokenType === 'cacheRead' ? value : 0;
-              const cacheCreationTokens = tokenType === 'cacheCreation' ? value : 0;
-              
-              updateSessionCost.run(0, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sessionId);
+              const tokens = parseTokenMetric(value, tokenType);
+              updateSessionCost.run(0, tokens.inputTokens, tokens.outputTokens, tokens.cacheReadTokens, tokens.cacheCreationTokens, sessionId);
             } else if (sessionId && metricName === 'conversation.message.cost') {
               // Handle message cost metric
-              const messageId = attrs.message_id || attrs['message.id'];
-              const conversationId = attrs.conversation_id || attrs['conversation.id'];
-              const role = attrs.role || attrs['message.role'];
-              const model = attrs.model || attrs['message.model'];
-              const cost = value;
+              const messageInfo = parseMessageInfo(attrs);
               
-              if (messageId) {
+              if (messageInfo.messageId) {
                 // Try to insert the message (will be updated with tokens later)
                 try {
                   insertMessage.run(
-                    messageId,
+                    messageInfo.messageId,
                     sessionId,
-                    conversationId || null,
-                    role || null,
-                    model || null,
-                    cost,
+                    messageInfo.conversationId || null,
+                    messageInfo.role || null,
+                    messageInfo.model || null,
+                    value,
                     0, // input_tokens - will be updated
                     0, // output_tokens - will be updated
                     0, // cache_creation_tokens - will be updated
@@ -77,22 +74,17 @@ export function processOTLPMetrics(data: any) {
               }
             } else if (metricName === 'conversation.message.tokens') {
               // Handle message token metric
-              const messageId = attrs.message_id || attrs['message.id'];
+              const messageInfo = parseMessageInfo(attrs);
               const tokenType = attrs.type || attrs['token.type'];
               
-              if (messageId && tokenType) {
-                const inputTokens = tokenType === 'input' ? value : 0;
-                const outputTokens = tokenType === 'output' ? value : 0;
-                const cacheReadTokens = tokenType === 'cache_read' ? value : 0;
-                const cacheCreationTokens = tokenType === 'cache_creation' ? value : 0;
-                
-                // Update message tokens
-                updateMessageTokens.run(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, messageId);
+              if (messageInfo.messageId && tokenType) {
+                const tokens = parseTokenMetric(value, tokenType);
+                updateMessageTokens.run(tokens.inputTokens, tokens.outputTokens, tokens.cacheReadTokens, tokens.cacheCreationTokens, messageInfo.messageId);
               }
             }
 
             insertMetric.run(
-              metric.sum.isMonotonic ? "counter" : "gauge",
+              getMetricType(metric),
               metricName,
               value,
               JSON.stringify({ ...resourceAttrs, ...attrs }),
@@ -110,7 +102,7 @@ export function processOTLPMetrics(data: any) {
           const dataPoints = metric.gauge.dataPoints || [];
           for (const dp of dataPoints) {
             const attrs = extractAttributes(dp.attributes || []);
-            const value = dp.asInt || dp.asDouble || 0;
+            const value = extractMetricValue(dp);
 
             insertMetric.run(
               "gauge",
