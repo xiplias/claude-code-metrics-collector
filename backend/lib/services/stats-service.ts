@@ -17,6 +17,7 @@ export interface StatsData {
     avg_cost_per_message: number;
   };
   recentSessions: any[];
+  modelUsage: any[];
 }
 
 export function getMetricStats() {
@@ -91,12 +92,35 @@ export function getRecentSessions(limit: number = 10) {
     .all(limit);
 }
 
+export function getModelUsage() {
+  return db
+    .query(
+      `
+      SELECT 
+        model,
+        COUNT(*) as message_count,
+        SUM(cost) as total_cost,
+        SUM(input_tokens) as total_input_tokens,
+        SUM(output_tokens) as total_output_tokens,
+        SUM(cache_read_tokens) as total_cache_read_tokens,
+        SUM(cache_creation_tokens) as total_cache_creation_tokens,
+        AVG(cost) as avg_cost_per_message
+      FROM messages
+      WHERE model IS NOT NULL
+      GROUP BY model
+      ORDER BY message_count DESC
+    `
+    )
+    .all();
+}
+
 export function calculateStatsData(): StatsData {
   const metricStats = getMetricStats();
   const eventStats = getEventStats();
   const sessionStats = getSessionStats();
   const messageCount = getMessageCount();
   const recentSessions = getRecentSessions();
+  const modelUsage = getModelUsage();
 
   // Calculate average cost per message
   const avgCostPerMessage = messageCount.total_messages > 0 
@@ -112,5 +136,6 @@ export function calculateStatsData(): StatsData {
       avg_cost_per_message: avgCostPerMessage,
     },
     recentSessions,
+    modelUsage,
   };
 }

@@ -84,11 +84,23 @@ interface Session {
   last_seen: string;
 }
 
+interface ModelUsage {
+  model: string;
+  message_count: number;
+  total_cost: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  avg_cost_per_message: number;
+}
+
 interface DashboardData {
   metrics: MetricStat[];
   events: EventStat[];
   sessions: SessionStats;
   recentSessions: Session[];
+  modelUsage: ModelUsage[];
 }
 
 const COLORS = [
@@ -191,23 +203,18 @@ export function Dashboard() {
   const uniqueMetrics = data.metrics.length;
   const uniqueEvents = new Set(data.events.map((e) => e.event_name)).size;
 
-  // Calculate total tokens (input + output only, cache tokens are a subset of input)
-  const totalTokens =
-    (data.sessions?.total_input_tokens || 0) +
-    (data.sessions?.total_output_tokens || 0);
-
-  // Calculate uncached tokens
+  // Calculate cached tokens
   const cachedTokens =
     (data.sessions?.total_cache_read_tokens || 0) +
     (data.sessions?.total_cache_creation_tokens || 0);
-  // Uncached = all output tokens + (input tokens - cache read tokens)
-  const uncachedInputTokens = Math.max(
-    0,
-    (data.sessions?.total_input_tokens || 0) -
-      (data.sessions?.total_cache_read_tokens || 0)
-  );
+  
+  // Calculate uncached tokens (simple total of input + output)
   const uncachedTokens =
-    (data.sessions?.total_output_tokens || 0) + uncachedInputTokens;
+    (data.sessions?.total_input_tokens || 0) +
+    (data.sessions?.total_output_tokens || 0);
+    
+  // Calculate total tokens (uncached + cached)
+  const totalTokens = uncachedTokens + cachedTokens;
 
   return (
     <div className="space-y-6">
@@ -262,7 +269,7 @@ export function Dashboard() {
             <div className="text-xs text-muted-foreground mt-1">
               <div>
                 Input:{" "}
-                {(data.sessions?.total_input_tokens || 0).toLocaleString()}
+                {((data.sessions?.total_input_tokens || 0) + (data.sessions?.total_cache_read_tokens || 0)).toLocaleString()}
               </div>
               <div>
                 Output:{" "}
@@ -284,7 +291,10 @@ export function Dashboard() {
               {uncachedTokens.toLocaleString()}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              <div>Input: {uncachedInputTokens.toLocaleString()}</div>
+              <div>
+                Input:{" "}
+                {(data.sessions?.total_input_tokens || 0).toLocaleString()}
+              </div>
               <div>
                 Output:{" "}
                 {(data.sessions?.total_output_tokens || 0).toLocaleString()}
@@ -318,7 +328,7 @@ export function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Session Metrics</CardTitle>
@@ -340,7 +350,7 @@ export function Dashboard() {
                   color: "#FFBB28",
                 },
               }}
-              className="h-[300px]"
+              className="h-[220px]"
             >
               <BarChart
                 data={
@@ -375,12 +385,52 @@ export function Dashboard() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Models Used</CardTitle>
+            <CardDescription>Message count and cost by model</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer
+              config={{
+                messages: {
+                  label: "Messages",
+                  color: "#8884D8",
+                },
+                cost: {
+                  label: "Cost ($)",
+                  color: "#82CA9D",
+                },
+              }}
+              className="h-[220px]"
+            >
+              <BarChart
+                data={
+                  data.modelUsage?.map((model) => ({
+                    model: model.model || "Unknown",
+                    messages: model.message_count,
+                    cost: model.total_cost,
+                  })) || []
+                }
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="model" angle={-45} textAnchor="end" height={80} />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar yAxisId="left" dataKey="messages" fill="var(--color-messages)" />
+                <Bar yAxisId="right" dataKey="cost" fill="var(--color-cost)" />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Token Usage Breakdown</CardTitle>
             <CardDescription>Distribution of token types</CardDescription>
           </CardHeader>
           <CardContent>
             {data.sessions && (
-              <ChartContainer config={chartConfig} className="h-[300px]">
+              <ChartContainer config={chartConfig} className="h-[220px]">
                 <PieChart>
                   <Pie
                     data={[
