@@ -24,6 +24,7 @@ interface RequestLog {
 
 export function Logs() {
   const [logs, setLogs] = useState<RequestLog[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,6 +40,7 @@ export function Logs() {
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
       setLogs(data.logs || []);
+      setTotalCount(data.totalCount || 0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -240,7 +242,7 @@ export function Logs() {
         <CardHeader>
           <CardTitle>Recent Requests</CardTitle>
           <CardDescription>
-            Showing {filteredLogs.length} of {logs.length} requests
+            Showing {filteredLogs.length} of {totalCount} requests
           </CardDescription>
         </CardHeader>
         <CardContent>
