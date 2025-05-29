@@ -16,6 +16,8 @@ import {
   Hash,
   User,
   Activity,
+  MessageSquare,
+  Coins,
 } from "lucide-react";
 import {
   ChartConfig,
@@ -302,6 +304,69 @@ export function SessionDetails() {
               />
             </BarChart>
           </ChartContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Messages</CardTitle>
+          <CardDescription>All messages in this session</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {data.messages.length > 0 ? (
+              data.messages.map((message, index) => (
+                <div
+                  key={message.id}
+                  className="border rounded-lg p-4 space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">Message {index + 1}</span>
+                      {message.role && (
+                        <Badge variant="outline">{message.role}</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <Coins className="h-3 w-3" />
+                        ${message.cost.toFixed(4)}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Input:</span>
+                      <span className="ml-1 font-medium">{message.input_tokens.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Output:</span>
+                      <span className="ml-1 font-medium">{message.output_tokens.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Cache Read:</span>
+                      <span className="ml-1 font-medium">{message.cache_read_tokens.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Cache Create:</span>
+                      <span className="ml-1 font-medium">{message.cache_creation_tokens.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>ID: {message.message_id}</span>
+                    <span>{new Date(message.timestamp).toLocaleString()}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-4">
+                No messages recorded for this session
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
