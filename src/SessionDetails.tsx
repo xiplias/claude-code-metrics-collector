@@ -191,7 +191,10 @@ export function SessionDetails() {
               ${session.total_cost.toFixed(4)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {data.messages.length} messages
+              ${(session.total_cost / (data.messages.length || 1)).toFixed(4)}/msg
+            </p>
+            <p className="text-xs text-muted-foreground">
+              ${(session.total_cost / (durationMinutes || 1)).toFixed(4)}/min
             </p>
           </CardContent>
         </Card>
@@ -208,8 +211,10 @@ export function SessionDetails() {
               ).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">
-              I: {session.total_input_tokens.toLocaleString()} / O:{" "}
-              {session.total_output_tokens.toLocaleString()}
+              Input: {session.total_input_tokens.toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Output: {session.total_output_tokens.toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -222,8 +227,11 @@ export function SessionDetails() {
           <CardContent>
             <div className="text-2xl font-bold">{durationMinutes}m</div>
             <p className="text-xs text-muted-foreground">
-              {new Date(session.first_seen).toLocaleTimeString()} -{" "}
-              {new Date(session.last_seen).toLocaleTimeString()}
+              {new Date(session.first_seen + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{" "}
+              {new Date(session.last_seen + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {data.messages.length} messages
             </p>
           </CardContent>
         </Card>
@@ -268,10 +276,6 @@ export function SessionDetails() {
             <span className="text-sm">{session.user_email || "Unknown"}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Model</span>
-            <Badge variant="secondary">{session.model}</Badge>
-          </div>
-          <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Organization</span>
             <span className="text-sm">{session.organization_id}</span>
           </div>
@@ -284,8 +288,8 @@ export function SessionDetails() {
           <CardDescription>Token usage and cost per message</CardDescription>
         </CardHeader>
         <CardContent>
-          <ChartContainer config={chartConfig} className="h-[300px]">
-            <BarChart data={messageChartData}>
+          <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <BarChart data={messageChartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="message" />
               <YAxis yAxisId="left" />
@@ -327,6 +331,9 @@ export function SessionDetails() {
                       {message.role && (
                         <Badge variant="outline">{message.role}</Badge>
                       )}
+                      {message.model && (
+                        <Badge variant="default">{message.model}</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="flex items-center gap-1">
@@ -357,7 +364,7 @@ export function SessionDetails() {
                   
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>ID: {message.message_id}</span>
-                    <span>{new Date(message.timestamp).toLocaleString()}</span>
+                    <span>{new Date(message.timestamp + 'Z').toLocaleString()}</span>
                   </div>
                 </div>
               ))
@@ -370,40 +377,6 @@ export function SessionDetails() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Events Timeline</CardTitle>
-          <CardDescription>Activities during this session</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {data.events.length > 0 ? (
-              data.events.map((event) => (
-                <div
-                  key={event.id}
-                  className="flex items-center justify-between border-b pb-2"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {event.event_type}: {event.event_name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(event.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  {event.duration_ms && (
-                    <Badge variant="outline">{event.duration_ms}ms</Badge>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                No events recorded for this session
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
