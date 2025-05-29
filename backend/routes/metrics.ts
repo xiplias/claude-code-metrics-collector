@@ -1,35 +1,31 @@
-import { db, insertMetric } from "../lib/database";
 import { corsHeaders, logRequest } from "../lib/utils";
-import { processOTLPMetrics } from "../lib/otlp";
+import { recordMetric, getMetrics, validateMetricData, parseMetricData } from "../lib/services/metrics-service";
+import { validateOTLPContentType, parseOTLPData, processOTLPData } from "../lib/services/otlp-service";
 
 export async function handlePostMetrics(req: Request) {
   const startTime = Date.now();
   let requestBody: string | undefined;
 
   try {
-    const data = await req.json();
-    requestBody = JSON.stringify(data);
+    const rawData = await req.json();
+    requestBody = JSON.stringify(rawData);
 
-    insertMetric.run(
-      data.metric_type || "counter",
-      data.metric_name,
-      data.metric_value || 1,
-      JSON.stringify(data.labels || {}),
-      data.project_path || null,
-      data.user_id || null,
-      data.session_id || null,
-      JSON.stringify(data.metadata || {})
-    );
+    const validation = validateMetricData(rawData);
+    if (!validation.isValid) {
+      const responseTime = Date.now() - startTime;
+      logRequest(req, "/metrics", 400, responseTime, validation.error, requestBody);
+      
+      return Response.json(
+        { error: validation.error },
+        { headers: corsHeaders, status: 400 }
+      );
+    }
+
+    const metricData = parseMetricData(rawData);
+    recordMetric(metricData);
 
     const responseTime = Date.now() - startTime;
-    logRequest(
-      req,
-      "/metrics",
-      200,
-      responseTime,
-      undefined,
-      requestBody
-    );
+    logRequest(req, "/metrics", 200, responseTime, undefined, requestBody);
 
     return Response.json(
       { success: true, message: "Metric recorded" },
@@ -37,16 +33,8 @@ export async function handlePostMetrics(req: Request) {
     );
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logRequest(
-      req,
-      "/metrics",
-      500,
-      responseTime,
-      errorMessage,
-      requestBody
-    );
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logRequest(req, "/metrics", 500, responseTime, errorMessage, requestBody);
 
     return Response.json(
       { error: "Failed to record metric", message: errorMessage },
@@ -60,15 +48,7 @@ export async function handleGetMetrics(req: Request) {
   const limit = parseInt(url.searchParams.get("limit") || "100");
   const offset = parseInt(url.searchParams.get("offset") || "0");
 
-  const metrics = db
-    .query(
-      `
-      SELECT * FROM metrics 
-      ORDER BY timestamp DESC 
-      LIMIT ? OFFSET ?
-    `
-    )
-    .all(limit, offset);
+  const metrics = getMetrics({ limit, offset });
 
   return Response.json({ metrics }, { headers: corsHeaders });
 }
@@ -79,59 +59,41 @@ export async function handlePostV1Metrics(req: Request) {
 
   try {
     const contentType = req.headers.get("content-type") || "";
-    let data;
-
-    if (contentType.includes("application/x-protobuf")) {
-      // Handle protobuf format (simplified - in production you'd use proper protobuf decoding)
+    
+    const contentValidation = validateOTLPContentType(contentType);
+    if (!contentValidation.isValid) {
       const responseTime = Date.now() - startTime;
-      logRequest(
-        req,
-        "/v1/metrics",
-        400,
-        responseTime,
-        "Protobuf format not supported"
-      );
-
+      logRequest(req, "/v1/metrics", 400, responseTime, contentValidation.error);
+      
       return Response.json(
-        {
-          error:
-            "Protobuf format not yet supported. Please use JSON format by setting OTEL_EXPORTER_OTLP_PROTOCOL=http/json",
-        },
+        { error: contentValidation.error },
         { headers: corsHeaders, status: 400 }
       );
-    } else {
-      // Handle JSON format
-      data = await req.json();
-      requestBody = JSON.stringify(data);
     }
 
-    // Process OTLP metrics
-    processOTLPMetrics(data);
+    const data = await parseOTLPData(req);
+    requestBody = JSON.stringify(data);
+
+    const processingResult = processOTLPData(data);
+    if (!processingResult.success) {
+      const responseTime = Date.now() - startTime;
+      logRequest(req, "/v1/metrics", 500, responseTime, processingResult.error, requestBody);
+      
+      return Response.json(
+        { error: "Failed to process OTLP metrics", message: processingResult.error },
+        { headers: corsHeaders, status: 500 }
+      );
+    }
 
     const responseTime = Date.now() - startTime;
-    logRequest(
-      req,
-      "/v1/metrics",
-      200,
-      responseTime,
-      undefined,
-      requestBody
-    );
+    logRequest(req, "/v1/metrics", 200, responseTime, undefined, requestBody);
 
     // OTLP expects an empty response on success
     return new Response(null, { status: 200, headers: corsHeaders });
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logRequest(
-      req,
-      "/v1/metrics",
-      500,
-      responseTime,
-      errorMessage,
-      requestBody
-    );
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logRequest(req, "/v1/metrics", 500, responseTime, errorMessage, requestBody);
 
     return Response.json(
       { error: "Failed to process OTLP metrics", message: errorMessage },

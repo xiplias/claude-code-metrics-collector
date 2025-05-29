@@ -1,23 +1,27 @@
-import { db, insertEvent } from "../lib/database";
 import { corsHeaders, logRequest } from "../lib/utils";
+import { recordEvent, getEvents, validateEventData, parseEventData } from "../lib/services/events-service";
 
 export async function handlePostEvents(req: Request) {
   const startTime = Date.now();
   let requestBody: string | undefined;
 
   try {
-    const data = await req.json();
-    requestBody = JSON.stringify(data);
+    const rawData = await req.json();
+    requestBody = JSON.stringify(rawData);
 
-    insertEvent.run(
-      data.event_type,
-      data.event_name,
-      data.project_path || null,
-      data.user_id || null,
-      data.session_id || null,
-      data.duration_ms || null,
-      JSON.stringify(data.metadata || {})
-    );
+    const validation = validateEventData(rawData);
+    if (!validation.isValid) {
+      const responseTime = Date.now() - startTime;
+      logRequest(req, "/events", 400, responseTime, validation.error, requestBody);
+      
+      return Response.json(
+        { error: validation.error },
+        { headers: corsHeaders, status: 400 }
+      );
+    }
+
+    const eventData = parseEventData(rawData);
+    recordEvent(eventData);
 
     const responseTime = Date.now() - startTime;
     logRequest(req, "/events", 200, responseTime, undefined, requestBody);
@@ -28,16 +32,8 @@ export async function handlePostEvents(req: Request) {
     );
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logRequest(
-      req,
-      "/events",
-      500,
-      responseTime,
-      errorMessage,
-      requestBody
-    );
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logRequest(req, "/events", 500, responseTime, errorMessage, requestBody);
 
     return Response.json(
       { error: "Failed to record event", message: errorMessage },
@@ -51,15 +47,7 @@ export async function handleGetEvents(req: Request) {
   const limit = parseInt(url.searchParams.get("limit") || "100");
   const offset = parseInt(url.searchParams.get("offset") || "0");
 
-  const events = db
-    .query(
-      `
-      SELECT * FROM events 
-      ORDER BY timestamp DESC 
-      LIMIT ? OFFSET ?
-    `
-    )
-    .all(limit, offset);
+  const events = getEvents({ limit, offset });
 
   return Response.json({ events }, { headers: corsHeaders });
 }

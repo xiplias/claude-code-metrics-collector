@@ -1,20 +1,10 @@
-import { db } from "../lib/database";
 import { corsHeaders } from "../lib/utils";
+import { getLogs, parseLogsParams } from "../lib/services/logs-service";
 
 export async function handleGetLogs(req: Request) {
   const url = new URL(req.url);
-  const limit = parseInt(url.searchParams.get("limit") || "100");
-  const offset = parseInt(url.searchParams.get("offset") || "0");
-
-  const logs = db
-    .query(
-      `
-      SELECT * FROM request_logs 
-      ORDER BY timestamp DESC 
-      LIMIT ? OFFSET ?
-    `
-    )
-    .all(limit, offset);
+  const params = parseLogsParams(url);
+  const logs = getLogs(params);
 
   return Response.json({ logs }, { headers: corsHeaders });
 }
