@@ -114,28 +114,40 @@ export function getModelUsage() {
     .all();
 }
 
-export function calculateStatsData(): StatsData {
+export function calculateStatsData() {
   const metricStats = getMetricStats();
   const eventStats = getEventStats();
-  const sessionStats = getSessionStats();
-  const messageCount = getMessageCount();
+  const sessionStats = getSessionStats() as any;
+  const messageCount = getMessageCount() as any;
   const recentSessions = getRecentSessions();
   const modelUsage = getModelUsage();
 
   // Calculate average cost per message
-  const avgCostPerMessage = messageCount.total_messages > 0 
-    ? sessionStats.total_cost / messageCount.total_messages 
+  const avgCostPerMessage = (messageCount?.total_messages || 0) > 0 
+    ? (sessionStats?.total_cost || 0) / (messageCount?.total_messages || 1)
     : 0;
 
+  // Return flattened structure that matches frontend expectations
   return {
-    metrics: metricStats,
-    events: eventStats,
-    sessions: {
-      ...sessionStats,
-      total_messages: messageCount.total_messages,
-      avg_cost_per_message: avgCostPerMessage,
-    },
-    recentSessions,
-    modelUsage,
+    // Flatten session stats to top level
+    total_sessions: sessionStats?.total_sessions || 0,
+    unique_users: sessionStats?.unique_users || 0,
+    total_cost: sessionStats?.total_cost || 0,
+    total_input_tokens: sessionStats?.total_input_tokens || 0,
+    total_output_tokens: sessionStats?.total_output_tokens || 0,
+    total_cache_read_tokens: sessionStats?.total_cache_read_tokens || 0,
+    total_cache_creation_tokens: sessionStats?.total_cache_creation_tokens || 0,
+    avg_cost_per_session: sessionStats?.avg_cost_per_session || 0,
+    max_session_cost: sessionStats?.max_session_cost || 0,
+    total_messages: messageCount?.total_messages || 0,
+    avg_cost_per_message: avgCostPerMessage,
+    
+    // Frontend expects cost_by_model, not modelUsage
+    cost_by_model: modelUsage || [],
+    
+    // Keep the nested data for completeness
+    metrics: metricStats || [],
+    events: eventStats || [],
+    recent_sessions: recentSessions || [],
   };
 }
