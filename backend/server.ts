@@ -10,6 +10,7 @@ import { handleGetSessions, handleGetSessionById, handleGetSessionMessages } fro
 import { handleGetLogs } from "./routes/logs";
 
 const server = serve({
+  port: 4000,
   routes: {
     // Telemetry endpoints (root level for external services)
     // POST /metrics - Record a metric
