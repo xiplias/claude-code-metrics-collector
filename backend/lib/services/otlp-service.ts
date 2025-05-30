@@ -1,5 +1,4 @@
 import { processOTLPMetrics } from "../otlp";
-import { processOTLPPayloadSimple } from "../otlp-simple";
 
 export interface OTLPProcessingResult {
   success: boolean;
@@ -22,8 +21,7 @@ export async function parseOTLPData(req: Request): Promise<any> {
 
 export function processOTLPData(data: any): OTLPProcessingResult {
   try {
-    // Use the simpler processing approach
-    processOTLPPayloadSimple(data);
+    processOTLPMetrics(data);
     return { success: true };
   } catch (error) {
     return {
