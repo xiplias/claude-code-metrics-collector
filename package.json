@@ -6,7 +6,7 @@
   "main": "backend/server.ts",
   "module": "backend/server.ts",
   "scripts": {
-    "dev": "bun --hot backend/server.ts",
+    "dev": "bun --hot --inspect backend/server.ts",
     "start": "NODE_ENV=production bun backend/server.ts",
     "build": "bun run build.ts",
     "test": "bun test",

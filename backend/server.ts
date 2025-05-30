@@ -2,15 +2,23 @@ import { serve } from "bun";
 import index from "../src/index.html";
 
 // Import route handlers from backend
-import { handlePostMetrics, handleGetMetrics, handlePostV1Metrics } from "./routes/metrics";
+import {
+  handlePostMetrics,
+  handleGetMetrics,
+  handlePostV1Metrics,
+} from "./routes/metrics";
 import { handlePostEvents, handleGetEvents } from "./routes/events";
 import { handleGetStats } from "./routes/stats";
 import { handleGetHealth } from "./routes/health";
-import { handleGetSessions, handleGetSessionById, handleGetSessionMessages } from "./routes/sessions";
+import {
+  handleGetSessions,
+  handleGetSessionById,
+  handleGetSessionMessages,
+} from "./routes/sessions";
 import { handleGetLogs } from "./routes/logs";
 
 const server = serve({
-  port: 4000,
+  port: 3000,
   routes: {
     // Telemetry endpoints (root level for external services)
     // POST /metrics - Record a metric
