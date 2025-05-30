@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
+import { useSessionDetails, useSessionMessagesInfinite } from "./hooks/api-hooks";
+import { formatters, calculations } from "./lib/formatters";
 import {
   Card,
   CardContent,
@@ -18,6 +20,7 @@ import {
   Activity,
   MessageSquare,
   Coins,
+  Loader2,
 } from "lucide-react";
 import {
   ChartConfig,
@@ -27,85 +30,240 @@ import {
 } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
-interface SessionDetail {
-  session: {
-    id: number;
-    session_id: string;
-    user_id: string;
-    user_email: string;
-    organization_id: string;
-    model: string;
-    total_cost: number;
-    total_input_tokens: number;
-    total_output_tokens: number;
-    total_cache_read_tokens: number;
-    total_cache_creation_tokens: number;
-    first_seen: string;
-    last_seen: string;
-  };
-  messages: Array<{
-    id: number;
-    message_id: string;
-    conversation_id: string;
-    role: string;
-    model: string;
-    cost: number;
-    input_tokens: number;
-    output_tokens: number;
-    cache_creation_tokens: number;
-    cache_read_tokens: number;
-    timestamp: string;
-    metric_types: string[];
-  }>;
-  events: Array<{
-    id: number;
-    event_type: string;
-    event_name: string;
-    duration_ms: number | null;
-    timestamp: string;
-    data: any;
-  }>;
+// Pure component for session stats
+function SessionStats({ session, messageCount, duration }: {
+  session: any;
+  messageCount: number;
+  duration: number;
+}) {
+  const durationMinutes = Math.floor(duration / (1000 * 60));
+  const avgCostPerMessage = calculations.averageCostPerMessage(session.total_cost, messageCount);
+  const totalTokens = calculations.totalTokens(
+    session.total_input_tokens,
+    session.total_output_tokens,
+    session.total_cache_read_tokens,
+    session.total_cache_creation_tokens
+  );
+  const cacheHitRatio = calculations.cacheHitRatio(session.total_cache_read_tokens, totalTokens);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.currency(session.total_cost)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {formatters.currency(avgCostPerMessage)}/msg
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {formatters.currency(session.total_cost / (durationMinutes || 1))}/min
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
+          <Hash className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.tokens(session.total_input_tokens + session.total_output_tokens)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Input: {formatters.tokens(session.total_input_tokens)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Output: {formatters.tokens(session.total_output_tokens)}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Duration</CardTitle>
+          <Clock className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{formatters.duration(duration)}</div>
+          <p className="text-xs text-muted-foreground">
+            {formatters.datetime(session.first_seen)} - {formatters.datetime(session.last_seen)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {formatters.number(messageCount)} messages
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Cache Usage</CardTitle>
+          <Activity className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.percentage(cacheHitRatio * 100, 100)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Read: {formatters.tokens(session.total_cache_read_tokens)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Created: {formatters.tokens(session.total_cache_creation_tokens)}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Pure component for message item
+function MessageItem({ message, index, totalMessages }: {
+  message: any;
+  index: number;
+  totalMessages: number;
+}) {
+  const totalTokens = calculations.totalTokens(
+    message.input_tokens,
+    message.output_tokens,
+    message.cache_read_tokens,
+    message.cache_creation_tokens
+  );
+
+  return (
+    <div className="border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">Message {index + 1}</span>
+          {message.role && (
+            <Badge variant="outline">{message.role}</Badge>
+          )}
+          {message.model && (
+            <Badge variant="default">{message.model}</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="flex items-center gap-1">
+            <Coins className="h-3 w-3" />
+            {formatters.currency(message.cost)}
+          </Badge>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <span className="text-muted-foreground">Input:</span>
+          <span className="ml-1 font-medium">{formatters.tokens(message.input_tokens)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Output:</span>
+          <span className="ml-1 font-medium">{formatters.tokens(message.output_tokens)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Cache Read:</span>
+          <span className="ml-1 font-medium">{formatters.tokens(message.cache_read_tokens)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Cache Create:</span>
+          <span className="ml-1 font-medium">{formatters.tokens(message.cache_creation_tokens)}</span>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>ID: {message.message_id}</span>
+        <span>{formatters.datetime(message.timestamp)}</span>
+      </div>
+      
+      {message.metric_types && message.metric_types.length > 0 && (
+        <div className="pt-2 border-t">
+          <div className="text-xs text-muted-foreground mb-1">Metrics:</div>
+          <div className="flex flex-wrap gap-1">
+            {message.metric_types.map((metricType: string, idx: number) => (
+              <Badge key={idx} variant="secondary" className="text-xs">
+                {metricType}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Hook for infinite scroll detection
+function useInfiniteScroll(callback: () => void, hasMore: boolean, isFetching: boolean) {
+  const observer = useRef<IntersectionObserver>();
+  
+  const lastElementRef = useCallback((node: HTMLDivElement) => {
+    if (isFetching) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        callback();
+      }
+    }, { threshold: 1.0 });
+    if (node) observer.current.observe(node);
+  }, [callback, hasMore, isFetching]);
+
+  return lastElementRef;
+}
+
+// Loading skeleton component
+function MessageSkeleton() {
+  return (
+    <div className="border rounded-lg p-4 space-y-2 animate-pulse">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className="h-4 w-4 bg-muted rounded" />
+          <div className="h-4 w-20 bg-muted rounded" />
+          <div className="h-5 w-12 bg-muted rounded" />
+        </div>
+        <div className="h-5 w-16 bg-muted rounded" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-4 bg-muted rounded" />
+        ))}
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="h-3 w-32 bg-muted rounded" />
+        <div className="h-3 w-24 bg-muted rounded" />
+      </div>
+    </div>
+  );
 }
 
 export function SessionDetails() {
   const [match, params] = useRoute("/sessions/:id");
   const sessionId = params?.id;
-  const [data, setData] = useState<SessionDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!sessionId) return;
+  // React Query hooks for data fetching
+  const { data: sessionData, isLoading: sessionLoading, error: sessionError } = useSessionDetails(sessionId!);
+  const {
+    data: messagesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: messagesLoading,
+    error: messagesError
+  } = useSessionMessagesInfinite(sessionId!, 20);
 
-    const fetchSession = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/sessions/${sessionId}`);
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error(`Session ${sessionId} not found`);
-          }
-          throw new Error(
-            `Failed to fetch session details: ${response.status}`
-          );
-        }
-        const sessionData = await response.json();
-        setData(sessionData);
-        setError(null);
-      } catch (err) {
-        console.error("Error fetching session:", err);
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSession();
-  }, [sessionId]);
+  // Infinite scroll setup
+  const lastElementRef = useInfiniteScroll(
+    () => fetchNextPage(),
+    !!hasNextPage,
+    isFetchingNextPage
+  );
 
   if (!match) return null;
 
-  if (loading) {
+  // Loading state
+  if (sessionLoading || messagesLoading) {
     return (
       <div className="space-y-4">
         <Link href="/">
@@ -115,7 +273,8 @@ export function SessionDetails() {
           </Button>
         </Link>
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-muted-foreground">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
             Loading session details...
           </div>
         </div>
@@ -123,7 +282,9 @@ export function SessionDetails() {
     );
   }
 
-  if (error || !data) {
+  // Error state
+  if (sessionError || messagesError || !sessionData) {
+    const error = sessionError || messagesError;
     return (
       <div className="space-y-4">
         <Link href="/">
@@ -134,24 +295,20 @@ export function SessionDetails() {
         </Link>
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-destructive">
-            Error: {error || "Session not found"}
+            Error: {error?.message || "Session not found"}
           </div>
         </div>
       </div>
     );
   }
 
-  const session = data.session;
-  const duration =
-    new Date(session.last_seen).getTime() -
-    new Date(session.first_seen).getTime();
-  const durationMinutes = Math.floor(duration / 1000 / 60);
+  const session = sessionData.session;
+  const allMessages = messagesData?.pages.flatMap(page => page.messages) || [];
+  const duration = calculations.sessionDuration(session.first_seen, session.last_seen);
 
-  // Reverse messages to show most recent first
-  const reversedMessages = [...data.messages].reverse();
-  
-  const messageChartData = reversedMessages.map((msg, index) => ({
-    message: `M${reversedMessages.length - index}`,
+  // Chart data generation
+  const messageChartData = allMessages.slice(0, 20).map((msg, index) => ({
+    message: `M${index + 1}`,
     cost: msg.cost,
     inputTokens: msg.input_tokens,
     outputTokens: msg.output_tokens,
@@ -184,207 +341,118 @@ export function SessionDetails() {
         <h1 className="text-2xl font-bold">Session Details</h1>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ${session.total_cost.toFixed(4)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              ${(session.total_cost / (data.messages.length || 1)).toFixed(4)}/msg
-            </p>
-            <p className="text-xs text-muted-foreground">
-              ${(session.total_cost / (durationMinutes || 1)).toFixed(4)}/min
-            </p>
-          </CardContent>
-        </Card>
+      {/* Session Statistics */}
+      <SessionStats 
+        session={session} 
+        messageCount={allMessages.length} 
+        duration={duration} 
+      />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
-            <Hash className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(
-                session.total_input_tokens + session.total_output_tokens
-              ).toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Input: {session.total_input_tokens.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Output: {session.total_output_tokens.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Duration</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{durationMinutes}m</div>
-            <p className="text-xs text-muted-foreground">
-              {new Date(session.first_seen + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{" "}
-              {new Date(session.last_seen + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {data.messages.length} messages
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cache Usage</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(
-                (session.total_cache_read_tokens /
-                  (session.total_input_tokens || 1)) *
-                100
-              ).toFixed(1)}
-              %
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {session.total_cache_read_tokens.toLocaleString()} cached tokens
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
+      {/* Session Info Card */}
       <Card>
         <CardHeader>
           <CardTitle>Session Information</CardTitle>
           <CardDescription>
-            Details about this Claude Code session
+            Session ID: {session.session_id}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Session ID</span>
-            <code className="text-xs bg-muted px-2 py-1 rounded">
-              {session.session_id}
-            </code>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">User</span>
-            <span className="text-sm">{session.user_email || "Unknown"}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Organization</span>
-            <span className="text-sm">{session.organization_id}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Message Costs & Tokens</CardTitle>
-          <CardDescription>Token usage and cost per message</CardDescription>
-        </CardHeader>
         <CardContent>
-          <ChartContainer config={chartConfig} className="h-[300px] w-full">
-            <BarChart data={messageChartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="message" />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
-              <Bar
-                yAxisId="right"
-                dataKey="inputTokens"
-                fill="var(--color-inputTokens)"
-              />
-              <Bar
-                yAxisId="right"
-                dataKey="outputTokens"
-                fill="var(--color-outputTokens)"
-              />
-            </BarChart>
-          </ChartContainer>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">User:</span>
+              <span className="ml-2 font-medium">{session.user_email}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Organization:</span>
+              <span className="ml-2 font-medium">{session.organization_id}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Model:</span>
+              <span className="ml-2 font-medium">{session.model}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Last Activity:</span>
+              <span className="ml-2 font-medium">{formatters.timeAgo(session.last_seen)}</span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
+      {/* Chart Card */}
+      {messageChartData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Message Analytics</CardTitle>
+            <CardDescription>
+              Cost and token usage per message (first 20 messages)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="min-h-[300px]">
+              <BarChart data={messageChartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="message" />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
+                <Bar
+                  yAxisId="right"
+                  dataKey="inputTokens"
+                  fill="var(--color-inputTokens)"
+                />
+                <Bar
+                  yAxisId="right"
+                  dataKey="outputTokens"
+                  fill="var(--color-outputTokens)"
+                />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Messages Card with Infinite Scroll */}
       <Card>
         <CardHeader>
           <CardTitle>Messages</CardTitle>
-          <CardDescription>All messages in this session (most recent first)</CardDescription>
+          <CardDescription>
+            All messages in this session (most recent first) - Auto-updates every 5 seconds
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {data.messages.length > 0 ? (
-              reversedMessages.map((message, index) => (
-                <div
-                  key={message.id}
-                  className="border rounded-lg p-4 space-y-2"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">Message {reversedMessages.length - index}</span>
-                      {message.role && (
-                        <Badge variant="outline">{message.role}</Badge>
-                      )}
-                      {message.model && (
-                        <Badge variant="default">{message.model}</Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="flex items-center gap-1">
-                        <Coins className="h-3 w-3" />
-                        ${message.cost.toFixed(4)}
-                      </Badge>
-                    </div>
+            {allMessages.length > 0 ? (
+              <>
+                {allMessages.map((message, index) => (
+                  <div
+                    key={message.id}
+                    ref={index === allMessages.length - 1 ? lastElementRef : undefined}
+                  >
+                    <MessageItem 
+                      message={message} 
+                      index={index} 
+                      totalMessages={allMessages.length} 
+                    />
                   </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Input:</span>
-                      <span className="ml-1 font-medium">{message.input_tokens.toLocaleString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Output:</span>
-                      <span className="ml-1 font-medium">{message.output_tokens.toLocaleString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Cache Read:</span>
-                      <span className="ml-1 font-medium">{message.cache_read_tokens.toLocaleString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Cache Create:</span>
-                      <span className="ml-1 font-medium">{message.cache_creation_tokens.toLocaleString()}</span>
-                    </div>
+                ))}
+                
+                {/* Loading more indicator */}
+                {isFetchingNextPage && (
+                  <div className="space-y-4">
+                    {[...Array(3)].map((_, i) => (
+                      <MessageSkeleton key={i} />
+                    ))}
                   </div>
-                  
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>ID: {message.message_id}</span>
-                    <span>{new Date(message.timestamp + 'Z').toLocaleString()}</span>
+                )}
+                
+                {/* End of list indicator */}
+                {!hasNextPage && allMessages.length > 0 && (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    No more messages to load
                   </div>
-                  
-                  {message.metric_types && message.metric_types.length > 0 && (
-                    <div className="pt-2 border-t">
-                      <div className="text-xs text-muted-foreground mb-1">Metrics:</div>
-                      <div className="flex flex-wrap gap-1">
-                        {message.metric_types.map((metricType, idx) => (
-                          <Badge key={idx} variant="secondary" className="text-xs">
-                            {metricType}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
+                )}
+              </>
             ) : (
               <div className="text-sm text-muted-foreground text-center py-4">
                 No messages recorded for this session
@@ -393,7 +461,6 @@ export function SessionDetails() {
           </div>
         </CardContent>
       </Card>
-
     </div>
   );
 }

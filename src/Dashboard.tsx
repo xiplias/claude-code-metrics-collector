@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
 import { Link } from "wouter";
+import { useStats, useSessions } from "./hooks/api-hooks";
+import { formatters, calculations } from "./lib/formatters";
 import {
   Card,
   CardContent,
@@ -36,487 +37,363 @@ import {
   Users,
   DollarSign,
   Hash,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
-
-interface MetricStat {
-  metric_name: string;
-  count: number;
-  total: number;
-  average: number;
-  min: number;
-  max: number;
-}
-
-interface EventStat {
-  event_type: string;
-  event_name: string;
-  count: number;
-  avg_duration_ms: number | null;
-}
-
-interface SessionStats {
-  total_sessions: number;
-  unique_users: number;
-  total_cost: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cache_read_tokens: number;
-  total_cache_creation_tokens: number;
-  avg_cost_per_session: number;
-  max_session_cost: number;
-  total_messages: number;
-  avg_cost_per_message: number;
-}
-
-interface Session {
-  id: number;
-  session_id: string;
-  user_id: string;
-  user_email: string;
-  organization_id: string;
-  model: string;
-  total_cost: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cache_read_tokens: number;
-  total_cache_creation_tokens: number;
-  first_seen: string;
-  last_seen: string;
-}
-
-interface ModelUsage {
-  model: string;
-  message_count: number;
-  total_cost: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cache_read_tokens: number;
-  total_cache_creation_tokens: number;
-  avg_cost_per_message: number;
-}
-
-interface DashboardData {
-  metrics: MetricStat[];
-  events: EventStat[];
-  sessions: SessionStats;
-  recentSessions: Session[];
-  modelUsage: ModelUsage[];
-}
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 const COLORS = [
   "#0088FE",
-  "#00C49F",
+  "#00C49F", 
   "#FFBB28",
   "#FF8042",
   "#8884D8",
   "#82CA9D",
 ];
 
-export function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch("/api/stats");
-      if (!response.ok) throw new Error("Failed to fetch stats");
-      const stats = await response.json();
-      setData(stats);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 1000); // Refresh every 1 second
-    return () => clearInterval(interval);
-  }, []);
-
-  if (loading && !data) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-muted-foreground">Loading dashboard...</div>
-      </div>
-    );
+// Pure component for main stats cards
+function StatsCards({ stats }: { stats: any }) {
+  // Safety check for stats
+  if (!stats) {
+    return <StatsSkeleton />;
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-destructive">Error: {error}</div>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  // Process data for charts
-  const commandMetrics = data.metrics.filter(
-    (m) =>
-      m.metric_name.includes("command") ||
-      m.metric_name.includes("tool") ||
-      m.metric_name.includes("api")
+  const totalTokens = calculations.totalTokens(
+    stats.total_input_tokens,
+    stats.total_output_tokens,
+    stats.total_cache_read_tokens,
+    stats.total_cache_creation_tokens
   );
+  
+  const cacheHitRatio = calculations.cacheHitRatio(stats.total_cache_read_tokens, totalTokens);
 
-  const eventsByType = data.events.reduce((acc, event) => {
-    if (!acc[event.event_type]) {
-      acc[event.event_type] = 0;
-    }
-    acc[event.event_type] += event.count;
-    return acc;
-  }, {} as Record<string, number>);
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Sessions</CardTitle>
+          <Activity className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{formatters.number(stats.total_sessions)}</div>
+          <p className="text-xs text-muted-foreground">
+            {formatters.number(stats.total_messages)} total messages
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {formatters.currency(stats.avg_cost_per_message)}/message avg
+          </p>
+        </CardContent>
+      </Card>
 
-  const eventTypeData = Object.entries(eventsByType).map(([name, value]) => ({
-    name,
-    value,
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.currency(stats.total_cost)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Avg per session: {formatters.currency(stats.total_cost / (stats.total_sessions || 1))}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Avg per message: {formatters.currency(stats.avg_cost_per_message)}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
+          <Hash className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.tokens(stats.total_input_tokens + stats.total_output_tokens)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Input: {formatters.tokens(stats.total_input_tokens)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Output: {formatters.tokens(stats.total_output_tokens)}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Cache Efficiency</CardTitle>
+          <Package className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatters.percentage(cacheHitRatio * 100, 100)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Read: {formatters.tokens(stats.total_cache_read_tokens)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Created: {formatters.tokens(stats.total_cache_creation_tokens)}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Pure component for model usage chart
+function ModelUsageChart({ modelUsage }: { modelUsage: any[] }) {
+  // Safety check for modelUsage
+  if (!modelUsage || modelUsage.length === 0) {
+    return <ChartSkeleton />;
+  }
+
+  const chartData = modelUsage.map(model => ({
+    model: model.model?.split('-').pop() || model.model || 'Unknown', // Shorten model names
+    cost: model.total_cost || 0,
+    messages: model.message_count || 0,
   }));
 
-  const topCommands = commandMetrics
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10)
-    .map((m) => ({
-      name: m.metric_name.replace("command.", "").replace("tool.", ""),
-      count: m.count,
-      avg: Math.round(m.average * 100) / 100,
-    }));
-
   const chartConfig = {
-    count: {
-      label: "Count",
-      color: "hsl(var(--chart-1))",
+    cost: {
+      label: "Cost ($)",
+      color: "#0088FE",
     },
-    avg: {
-      label: "Average",
-      color: "hsl(var(--chart-2))",
+    messages: {
+      label: "Messages",
+      color: "#00C49F",
     },
   } satisfies ChartConfig;
 
-  // Calculate summary stats
-  const totalMetrics = data.metrics.reduce((sum, m) => sum + m.count, 0);
-  const totalEvents = data.events.reduce((sum, e) => sum + e.count, 0);
-  const uniqueMetrics = data.metrics.length;
-  const uniqueEvents = new Set(data.events.map((e) => e.event_name)).size;
-
-  // Calculate cached tokens
-  const cachedTokens =
-    (data.sessions?.total_cache_read_tokens || 0) +
-    (data.sessions?.total_cache_creation_tokens || 0);
-  
-  // Calculate uncached tokens (simple total of input + output)
-  const uncachedTokens =
-    (data.sessions?.total_input_tokens || 0) +
-    (data.sessions?.total_output_tokens || 0);
-    
-  // Calculate total tokens (uncached + cached)
-  const totalTokens = uncachedTokens + cachedTokens;
-
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sessions</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {data.sessions?.total_sessions || 0}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <div>{data.sessions?.total_messages || 0} messages</div>
-              <div>{data.sessions?.unique_users || 0} unique users</div>
-            </div>
-          </CardContent>
-        </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle>Usage by Model</CardTitle>
+        <CardDescription>Cost and message count per model</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={chartConfig} className="min-h-[300px]">
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="model" />
+            <YAxis yAxisId="left" />
+            <YAxis yAxisId="right" orientation="right" />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
+            <Bar yAxisId="right" dataKey="messages" fill="var(--color-messages)" />
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ${(data.sessions?.total_cost || 0).toFixed(2)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <div>
-                Avg ${(data.sessions?.avg_cost_per_session || 0).toFixed(2)}
-                /session
-              </div>
-              <div>
-                Avg ${(data.sessions?.avg_cost_per_message || 0).toFixed(4)}
-                /message
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
-            <Hash className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalTokens.toLocaleString()}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <div>
-                Input:{" "}
-                {((data.sessions?.total_input_tokens || 0) + (data.sessions?.total_cache_read_tokens || 0)).toLocaleString()}
-              </div>
-              <div>
-                Output:{" "}
-                {(data.sessions?.total_output_tokens || 0).toLocaleString()}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Uncached Tokens
-            </CardTitle>
-            <Code2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {uncachedTokens.toLocaleString()}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <div>
-                Input:{" "}
-                {(data.sessions?.total_input_tokens || 0).toLocaleString()}
-              </div>
-              <div>
-                Output:{" "}
-                {(data.sessions?.total_output_tokens || 0).toLocaleString()}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cache Tokens</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {cachedTokens.toLocaleString()}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <div>
-                Read:{" "}
-                {(data.sessions?.total_cache_read_tokens || 0).toLocaleString()}
-              </div>
-              <div>
-                Creation:{" "}
-                {(
-                  data.sessions?.total_cache_creation_tokens || 0
-                ).toLocaleString()}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Session Metrics</CardTitle>
-            <CardDescription>Price and token usage per session</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer
-              config={{
-                cost: {
-                  label: "Cost ($)",
-                  color: "#0088FE",
-                },
-                inputTokens: {
-                  label: "Input Tokens (k)",
-                  color: "#00C49F",
-                },
-                outputTokens: {
-                  label: "Output Tokens (k)",
-                  color: "#FFBB28",
-                },
-              }}
-              className="h-[220px]"
-            >
-              <BarChart
-                data={
-                  data.recentSessions?.slice(-10).map((session, index) => ({
-                    session: `S${index + 1}`,
-                    cost: session.total_cost,
-                    inputTokens: session.total_input_tokens / 1000, // Scale down for better visualization
-                    outputTokens: session.total_output_tokens / 1000,
-                  })) || []
-                }
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="session" />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar yAxisId="left" dataKey="cost" fill="var(--color-cost)" />
-                <Bar
-                  yAxisId="right"
-                  dataKey="inputTokens"
-                  fill="var(--color-inputTokens)"
-                />
-                <Bar
-                  yAxisId="right"
-                  dataKey="outputTokens"
-                  fill="var(--color-outputTokens)"
-                />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Models Used</CardTitle>
-            <CardDescription>Message count and cost by model</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer
-              config={{
-                messages: {
-                  label: "Messages",
-                  color: "#8884D8",
-                },
-                cost: {
-                  label: "Cost ($)",
-                  color: "#82CA9D",
-                },
-              }}
-              className="h-[220px]"
-            >
-              <BarChart
-                data={
-                  data.modelUsage?.map((model) => ({
-                    model: model.model || "Unknown",
-                    messages: model.message_count,
-                    cost: model.total_cost,
-                  })) || []
-                }
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="model" angle={-45} textAnchor="end" height={80} />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar yAxisId="left" dataKey="messages" fill="var(--color-messages)" />
-                <Bar yAxisId="right" dataKey="cost" fill="var(--color-cost)" />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Token Usage Breakdown</CardTitle>
-            <CardDescription>Distribution of token types</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data.sessions && (
-              <ChartContainer config={chartConfig} className="h-[220px]">
-                <PieChart>
-                  <Pie
-                    data={[
-                      {
-                        name: "Input",
-                        value: data.sessions.total_input_tokens || 0,
-                      },
-                      {
-                        name: "Output",
-                        value: data.sessions.total_output_tokens || 0,
-                      },
-                      {
-                        name: "Cache Read",
-                        value: data.sessions.total_cache_read_tokens || 0,
-                      },
-                      {
-                        name: "Cache Creation",
-                        value: data.sessions.total_cache_creation_tokens || 0,
-                      },
-                    ].filter((item) => item.value > 0)}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`
-                    }
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {[0, 1, 2, 3].map((index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                </PieChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
+// Pure component for recent sessions
+function RecentSessionsList({ sessions }: { sessions: any[] }) {
+  if (!sessions || sessions.length === 0) {
+    return (
       <Card>
         <CardHeader>
           <CardTitle>Recent Sessions</CardTitle>
           <CardDescription>Latest Claude Code sessions</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {data.recentSessions?.length > 0 ? (
-              data.recentSessions.map((session) => (
-                <Link
-                  key={session.session_id}
-                  href={`/sessions/${session.session_id}`}
-                  className="flex items-center justify-between border-b pb-2 hover:bg-muted/50 px-2 -mx-2 rounded cursor-pointer transition-colors"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {session.user_email || "Unknown User"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Model: {session.model} • Session:{" "}
-                      {session.session_id.slice(0, 8)}...
-                    </p>
+          <div className="text-center text-muted-foreground py-4">
+            No sessions found
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent Sessions</CardTitle>
+        <CardDescription>Latest Claude Code sessions (auto-refreshes every 5s)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {sessions.slice(0, 10).map((session) => (
+            <div key={session.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <Link 
+                      href={`/sessions/${session.session_id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {session.user_email}
+                    </Link>
+                    <Badge variant="outline" className="text-xs">
+                      {session.model}
+                    </Badge>
                   </div>
-                  <div className="text-right space-y-1">
-                    <p className="text-sm font-semibold">
-                      ${session.total_cost.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {(
-                        session.total_input_tokens + session.total_output_tokens
-                      ).toLocaleString()}{" "}
-                      tokens
-                    </p>
+                  <div className="text-sm text-muted-foreground">
+                    {formatters.timeAgo(session.last_seen)} • Session: {session.session_id.slice(0, 8)}...
                   </div>
-                </Link>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                No sessions recorded yet
+                </div>
               </div>
-            )}
+              <div className="flex items-center space-x-4 text-sm">
+                <div className="text-right">
+                  <div className="font-medium">{formatters.currency(session.total_cost)}</div>
+                  <div className="text-muted-foreground">
+                    {formatters.tokens(session.total_input_tokens + session.total_output_tokens)} tokens
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Loading skeleton components
+function StatsSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {[...Array(4)].map((_, i) => (
+        <Card key={i}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+            <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+          </CardHeader>
+          <CardContent>
+            <div className="h-8 w-16 bg-muted rounded animate-pulse mb-2" />
+            <div className="h-3 w-24 bg-muted rounded animate-pulse mb-1" />
+            <div className="h-3 w-20 bg-muted rounded animate-pulse" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="h-6 w-32 bg-muted rounded animate-pulse mb-2" />
+        <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+      </CardHeader>
+      <CardContent>
+        <div className="h-[300px] bg-muted rounded animate-pulse" />
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Dashboard() {
+  // React Query hooks for data fetching
+  const { 
+    data: stats, 
+    isLoading: statsLoading, 
+    error: statsError,
+    isRefetching: statsRefetching,
+    refetch: refetchStats
+  } = useStats({ refetchInterval: 5000 }); // 5 seconds
+
+  // Sessions are now included in stats response as recent_sessions
+  const sessions = stats?.recent_sessions || [];
+
+  // Loading state
+  if (statsLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading...
+          </div>
+        </div>
+        <StatsSkeleton />
+        <div className="grid gap-6 md:grid-cols-2">
+          <ChartSkeleton />
+          <ChartSkeleton />
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (statsError) {
+    const error = statsError;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <Button variant="outline" onClick={() => refetchStats()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="text-destructive mb-2">
+              Error loading dashboard: {error?.message}
+            </div>
+            <Button variant="outline" onClick={() => refetchStats()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <div className="flex items-center gap-2">
+          {statsRefetching && (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Refreshing...
+            </div>
+          )}
+          <Button variant="outline" size="sm" onClick={() => refetchStats()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Statistics */}
+      <StatsCards stats={stats} />
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Model Usage Chart */}
+        {stats?.cost_by_model && <ModelUsageChart modelUsage={stats.cost_by_model} />}
+
+        {/* Recent Sessions */}
+        <RecentSessionsList sessions={sessions} />
+      </div>
+
+      {/* Additional Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle>System Status</CardTitle>
+          <CardDescription>Real-time telemetry collection status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 bg-green-500 rounded-full" />
+              <span>Telemetry Active</span>
+            </div>
+            <div className="text-muted-foreground">
+              Auto-refresh: 5s
+            </div>
+            <div className="text-muted-foreground">
+              Last update: {formatters.timeAgo(new Date().toISOString())}
+            </div>
           </div>
         </CardContent>
       </Card>
