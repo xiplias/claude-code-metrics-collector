@@ -52,6 +52,16 @@ function processResourceMetrics(resourceMetric: any) {
     
     if (messageData.messageId) {
       saveMessage(messageData, sessionData);
+    } else if (messageData.totalCost > 0 || messageData.inputTokens > 0 || messageData.outputTokens > 0) {
+      // Create a synthetic message for session-level costs without explicit message_id
+      // This ensures we capture all activity even when message-level metrics aren't sent
+      const syntheticMessageData = {
+        ...messageData,
+        messageId: `synthetic-${sessionData.sessionId}-${Date.now()}`,
+        role: messageData.role || 'assistant',
+        conversationId: messageData.conversationId || sessionData.sessionId
+      };
+      saveMessage(syntheticMessageData, sessionData);
     }
   }
 }
