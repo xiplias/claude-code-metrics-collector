@@ -55,6 +55,7 @@ interface SessionDetail {
     cache_creation_tokens: number;
     cache_read_tokens: number;
     timestamp: string;
+    metric_types: string[];
   }>;
   events: Array<{
     id: number;
@@ -146,8 +147,11 @@ export function SessionDetails() {
     new Date(session.first_seen).getTime();
   const durationMinutes = Math.floor(duration / 1000 / 60);
 
-  const messageChartData = data.messages.map((msg, index) => ({
-    message: `M${index + 1}`,
+  // Reverse messages to show most recent first
+  const reversedMessages = [...data.messages].reverse();
+  
+  const messageChartData = reversedMessages.map((msg, index) => ({
+    message: `M${reversedMessages.length - index}`,
     cost: msg.cost,
     inputTokens: msg.input_tokens,
     outputTokens: msg.output_tokens,
@@ -314,12 +318,12 @@ export function SessionDetails() {
       <Card>
         <CardHeader>
           <CardTitle>Messages</CardTitle>
-          <CardDescription>All messages in this session</CardDescription>
+          <CardDescription>All messages in this session (most recent first)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {data.messages.length > 0 ? (
-              data.messages.map((message, index) => (
+              reversedMessages.map((message, index) => (
                 <div
                   key={message.id}
                   className="border rounded-lg p-4 space-y-2"
@@ -327,7 +331,7 @@ export function SessionDetails() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">Message {index + 1}</span>
+                      <span className="font-medium">Message {reversedMessages.length - index}</span>
                       {message.role && (
                         <Badge variant="outline">{message.role}</Badge>
                       )}
@@ -366,6 +370,19 @@ export function SessionDetails() {
                     <span>ID: {message.message_id}</span>
                     <span>{new Date(message.timestamp + 'Z').toLocaleString()}</span>
                   </div>
+                  
+                  {message.metric_types && message.metric_types.length > 0 && (
+                    <div className="pt-2 border-t">
+                      <div className="text-xs text-muted-foreground mb-1">Metrics:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {message.metric_types.map((metricType, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">
+                            {metricType}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
