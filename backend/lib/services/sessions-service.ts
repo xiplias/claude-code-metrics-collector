@@ -73,9 +73,71 @@ export function getSessionMessages(sessionId: string, params: { limit?: number; 
     // Extract unique metric types for this message
     const metricTypes = [...new Set(directMessageMetrics.map((m: any) => m.metric_name))];
 
+    // Check for code-related activities
+    const codeEditDecisions = directMessageMetrics.filter((m: any) => 
+      m.metric_name === 'claude_code.code_edit_tool.decision'
+    );
+    
+    const linesOfCodeMetrics = directMessageMetrics.filter((m: any) => 
+      m.metric_name === 'claude_code.lines_of_code.count'
+    );
+
+    // Analyze code changes
+    const hasCodeChanges = linesOfCodeMetrics.length > 0;
+    const hasFileOperations = codeEditDecisions.length > 0;
+    const acceptedFileOps = codeEditDecisions.filter((m: any) => {
+      try {
+        const labels = JSON.parse(m.labels || '{}');
+        return labels.decision === 'accept';
+      } catch {
+        return false;
+      }
+    });
+
+    // Calculate total lines changed
+    const totalLinesAdded = linesOfCodeMetrics
+      .filter((m: any) => {
+        try {
+          const labels = JSON.parse(m.labels || '{}');
+          return labels.type === 'added';
+        } catch {
+          return false;
+        }
+      })
+      .reduce((sum: number, m: any) => sum + (m.metric_value || 0), 0);
+
+    const totalLinesRemoved = linesOfCodeMetrics
+      .filter((m: any) => {
+        try {
+          const labels = JSON.parse(m.labels || '{}');
+          return labels.type === 'removed';
+        } catch {
+          return false;
+        }
+      })
+      .reduce((sum: number, m: any) => sum + (m.metric_value || 0), 0);
+
+    // Get tool names used
+    const toolsUsed = acceptedFileOps.map((m: any) => {
+      try {
+        const labels = JSON.parse(m.labels || '{}');
+        return labels.tool_name;
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
     return {
       ...message,
-      metric_types: metricTypes
+      metric_types: metricTypes,
+      code_activity: {
+        has_code_changes: hasCodeChanges,
+        has_file_operations: hasFileOperations,
+        total_lines_added: totalLinesAdded,
+        total_lines_removed: totalLinesRemoved,
+        tools_used: [...new Set(toolsUsed)],
+        file_operations_count: acceptedFileOps.length
+      }
     };
   });
 

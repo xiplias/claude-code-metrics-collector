@@ -84,8 +84,11 @@ export function getRecentSessions(limit: number = 10) {
   return db
     .query(
       `
-      SELECT * FROM sessions
-      ORDER BY last_seen DESC
+      SELECT 
+        s.*,
+        (SELECT COUNT(*) FROM messages WHERE session_id = s.session_id) as message_count
+      FROM sessions s
+      ORDER BY s.last_seen DESC
       LIMIT ?
     `
     )
