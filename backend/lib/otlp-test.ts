@@ -221,12 +221,17 @@ function processMetric(metric: any, messageData: MessageData, resourceAttrs: Rec
       }
     }
     
-    // Store the raw metric
+    // Store the raw metric with message association
+    const labels = { ...resourceAttrs, ...dpAttrs };
+    if (messageData.messageId && !labels.message_id && !labels['message.id']) {
+      labels.message_id = messageData.messageId;
+    }
+    
     testInsertMetric.run(
       metricType,
       metricName,
       value,
-      JSON.stringify({ ...resourceAttrs, ...dpAttrs }),
+      JSON.stringify(labels),
       dpAttrs['project_path'] || resourceAttrs['project_path'] || null,
       messageData.userId || dpAttrs['user.id'] || dpAttrs['user_id'] || null,
       messageData.sessionId || dpAttrs['session_id'] || null,
