@@ -1,4 +1,4 @@
-import { db } from "../database";
+import { testDb } from "../test-database";
 
 export interface SessionsListParams {
   limit: number;
@@ -13,7 +13,7 @@ export interface SessionDetailData {
 }
 
 export function getSessions(params: SessionsListParams) {
-  return db
+  return testDb
     .query(
       `
       SELECT * FROM sessions
@@ -25,13 +25,13 @@ export function getSessions(params: SessionsListParams) {
 }
 
 export function getSessionById(sessionId: string): any | null {
-  return db
+  return testDb
     .query(`SELECT * FROM sessions WHERE session_id = ?`)
     .get(sessionId);
 }
 
 export function getSessionMessages(sessionId: string) {
-  return db
+  return testDb
     .query(
       `
       SELECT * FROM messages
@@ -43,7 +43,7 @@ export function getSessionMessages(sessionId: string) {
 }
 
 export function getSessionEvents(sessionId: string) {
-  return db
+  return testDb
     .query(
       `
       SELECT * FROM events
@@ -55,7 +55,7 @@ export function getSessionEvents(sessionId: string) {
 }
 
 export function getSessionMetrics(sessionId: string) {
-  return db
+  return testDb
     .query(
       `
       SELECT * FROM metrics
@@ -78,9 +78,9 @@ export function getSessionDetails(sessionId: string): SessionDetailData | null {
   const metrics = getSessionMetrics(sessionId);
 
   // Enhance messages with their associated metrics
-  const enhancedMessages = messages.map((message, index) => {
-    // Find metrics that reference this message directly
-    const directMessageMetrics = metrics.filter(metric => {
+  const enhancedMessages = messages.map(message => {
+    // Find metrics that reference this message
+    const messageMetrics = metrics.filter(metric => {
       try {
         const labels = JSON.parse(metric.labels || '{}');
         return labels.message_id === message.message_id || labels['message.id'] === message.message_id;
@@ -89,22 +89,8 @@ export function getSessionDetails(sessionId: string): SessionDetailData | null {
       }
     });
 
-    // If no direct message metrics, find metrics recorded around the same time
-    // Get the time window between this message and the next (or 5 seconds for the last message)
-    const messageTime = new Date(message.timestamp).getTime();
-    const nextMessageTime = index < messages.length - 1 
-      ? new Date(messages[index + 1].timestamp).getTime()
-      : messageTime + 5000; // 5 seconds window for last message
-
-    const timeWindowMetrics = directMessageMetrics.length === 0 
-      ? metrics.filter(metric => {
-          const metricTime = new Date(metric.timestamp).getTime();
-          return metricTime >= messageTime && metricTime < nextMessageTime;
-        })
-      : directMessageMetrics;
-
     // Extract unique metric types for this message
-    const metricTypes = [...new Set(timeWindowMetrics.map(m => m.metric_name))];
+    const metricTypes = [...new Set(messageMetrics.map(m => m.metric_name))];
 
     return {
       ...message,
