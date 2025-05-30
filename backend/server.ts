@@ -6,7 +6,7 @@ import { handlePostMetrics, handleGetMetrics, handlePostV1Metrics } from "./rout
 import { handlePostEvents, handleGetEvents } from "./routes/events";
 import { handleGetStats } from "./routes/stats";
 import { handleGetHealth } from "./routes/health";
-import { handleGetSessions, handleGetSessionById } from "./routes/sessions";
+import { handleGetSessions, handleGetSessionById, handleGetSessionMessages } from "./routes/sessions";
 import { handleGetLogs } from "./routes/logs";
 
 const server = serve({
@@ -73,6 +73,13 @@ const server = serve({
     "/api/sessions/:id": {
       async GET(req) {
         return handleGetSessionById(req);
+      },
+    },
+
+    // GET /api/sessions/:id/messages - Get paginated session messages
+    "/api/sessions/:id/messages": {
+      async GET(req) {
+        return handleGetSessionMessages(req);
       },
     },
 

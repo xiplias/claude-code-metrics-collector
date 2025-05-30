@@ -30,16 +30,60 @@ export function getSessionById(sessionId: string): any | null {
     .get(sessionId);
 }
 
-export function getSessionMessages(sessionId: string) {
-  return db
+export function getSessionMessages(sessionId: string, params: { limit?: number; offset?: number } = {}) {
+  const limit = params.limit || 20;
+  const offset = params.offset || 0;
+
+  // Get total count
+  const totalResult = db
+    .query(`SELECT COUNT(*) as count FROM messages WHERE session_id = ?`)
+    .get(sessionId) as { count: number };
+  
+  const total = totalResult.count;
+
+  // Get paginated messages (newest first for better UX)
+  const messages = db
     .query(
       `
       SELECT * FROM messages
       WHERE session_id = ?
-      ORDER BY timestamp ASC
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
     `
     )
-    .all(sessionId);
+    .all(sessionId, limit, offset);
+
+  // Enhance messages with their associated metrics
+  const enhancedMessages = messages.map((message, index) => {
+    // Find metrics that reference this message directly
+    const directMessageMetrics = db
+      .query(
+        `
+        SELECT * FROM metrics 
+        WHERE session_id = ? 
+        AND (
+          JSON_EXTRACT(labels, '$.message_id') = ? OR 
+          JSON_EXTRACT(labels, '$."message.id"') = ?
+        )
+        ORDER BY timestamp DESC
+      `
+      )
+      .all(sessionId, (message as any).message_id, (message as any).message_id);
+
+    // Extract unique metric types for this message
+    const metricTypes = [...new Set(directMessageMetrics.map((m: any) => m.metric_name))];
+
+    return {
+      ...message,
+      metric_types: metricTypes
+    };
+  });
+
+  return {
+    messages: enhancedMessages,
+    total,
+    hasMore: offset + limit < total,
+  };
 }
 
 export function getSessionEvents(sessionId: string) {
@@ -73,9 +117,12 @@ export function getSessionDetails(sessionId: string): SessionDetailData | null {
     return null;
   }
 
-  const messages = getSessionMessages(sessionId);
+  const messagesResult = getSessionMessages(sessionId);
   const events = getSessionEvents(sessionId);
   const metrics = getSessionMetrics(sessionId);
+
+  // Extract messages array from paginated result
+  const messages = messagesResult.messages;
 
   // Enhance messages with their associated metrics
   const enhancedMessages = messages.map((message, index) => {
