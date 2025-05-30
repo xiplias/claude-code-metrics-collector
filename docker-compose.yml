@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  claude-metrics:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - claude-metrics-data:/data
+    environment:
+      - DATABASE_PATH=/data/claude-metrics.db
+    restart: unless-stopped
+
+volumes:
+  claude-metrics-data:
