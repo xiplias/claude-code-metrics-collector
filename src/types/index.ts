@@ -14,6 +14,16 @@ export interface Session {
   total_cache_creation_tokens: number;
   first_seen: string;
   last_seen: string;
+  message_count?: number;
+}
+
+export interface CodeActivity {
+  has_code_changes: boolean;
+  has_file_operations: boolean;
+  total_lines_added: number;
+  total_lines_removed: number;
+  tools_used: string[];
+  file_operations_count: number;
 }
 
 export interface Message {
@@ -30,6 +40,7 @@ export interface Message {
   cache_read_tokens: number;
   timestamp: string;
   metric_types: string[];
+  code_activity?: CodeActivity;
 }
 
 export interface SessionDetails {

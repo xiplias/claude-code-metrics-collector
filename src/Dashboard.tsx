@@ -232,13 +232,21 @@ function RecentSessionsList({ sessions }: { sessions: any[] }) {
                     </Badge>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {formatters.timeAgo(session.last_seen)} • Session: {session.session_id.slice(0, 8)}...
+                    Started {formatters.timeAgo(session.first_seen)} • Last message {formatters.timeAgo(session.last_seen)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Session: {session.session_id.slice(0, 8)}...
                   </div>
                 </div>
               </div>
               <div className="flex items-center space-x-4 text-sm">
                 <div className="text-right">
-                  <div className="font-medium">{formatters.currency(session.total_cost)}</div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {formatters.number(session.message_count || 0)} messages
+                    </Badge>
+                    <span className="font-medium">{formatters.currency(session.total_cost)}</span>
+                  </div>
                   <div className="text-muted-foreground">
                     {formatters.tokens(session.total_input_tokens + session.total_output_tokens)} tokens
                   </div>

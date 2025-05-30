@@ -21,6 +21,10 @@ import {
   MessageSquare,
   Coins,
   Loader2,
+  FileText,
+  Code,
+  Plus,
+  Minus,
 } from "lucide-react";
 import {
   ChartConfig,
@@ -139,7 +143,15 @@ function MessageItem({ message, index, totalMessages }: {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">Message {index + 1}</span>
+          <span className="font-medium">Message {totalMessages - index}</span>
+          
+          {message.code_activity && (message.code_activity.has_code_changes || message.code_activity.has_file_operations) && (
+            <Badge variant="outline" className="text-xs flex items-center gap-1">
+              <Code className="h-3 w-3" />
+              Code
+            </Badge>
+          )}
+          
           {message.role && (
             <Badge variant="outline">{message.role}</Badge>
           )}
@@ -179,6 +191,51 @@ function MessageItem({ message, index, totalMessages }: {
         <span>{formatters.datetime(message.timestamp)}</span>
       </div>
       
+      {/* Code Changes Section */}
+      {message.code_activity && (message.code_activity.has_code_changes || message.code_activity.has_file_operations) && (
+        <div className="pt-2 border-t">
+          <div className="flex items-center gap-2 mb-2">
+            <Code className="h-3 w-3 text-muted-foreground" />
+            <div className="text-xs text-muted-foreground">Code Changes:</div>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            {message.code_activity.has_code_changes && (
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className="text-xs flex items-center gap-1">
+                  <FileText className="h-3 w-3" />
+                  Modified Files
+                </Badge>
+                
+                {message.code_activity.total_lines_added > 0 && (
+                  <Badge variant="outline" className="text-xs text-green-600 flex items-center gap-1">
+                    <Plus className="h-3 w-3" />
+                    +{message.code_activity.total_lines_added}
+                  </Badge>
+                )}
+                
+                {message.code_activity.total_lines_removed > 0 && (
+                  <Badge variant="outline" className="text-xs text-red-600 flex items-center gap-1">
+                    <Minus className="h-3 w-3" />
+                    -{message.code_activity.total_lines_removed}
+                  </Badge>
+                )}
+              </div>
+            )}
+            
+            {message.code_activity.tools_used && message.code_activity.tools_used.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {message.code_activity.tools_used.map((tool: string, idx: number) => (
+                  <Badge key={idx} variant="secondary" className="text-xs">
+                    {tool}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {message.metric_types && message.metric_types.length > 0 && (
         <div className="pt-2 border-t">
           <div className="text-xs text-muted-foreground mb-1">Metrics:</div>
@@ -304,11 +361,12 @@ export function SessionDetails() {
 
   const session = sessionData.session;
   const allMessages = messagesData?.pages.flatMap(page => page.messages) || [];
+  const totalMessageCount = messagesData?.pages[0]?.total || allMessages.length;
   const duration = calculations.sessionDuration(session.first_seen, session.last_seen);
 
   // Chart data generation
   const messageChartData = allMessages.slice(0, 20).map((msg, index) => ({
-    message: `M${index + 1}`,
+    message: `M${Math.min(allMessages.length, 20) - index}`,
     cost: msg.cost,
     inputTokens: msg.input_tokens,
     outputTokens: msg.output_tokens,
@@ -344,7 +402,7 @@ export function SessionDetails() {
       {/* Session Statistics */}
       <SessionStats 
         session={session} 
-        messageCount={allMessages.length} 
+        messageCount={totalMessageCount} 
         duration={duration} 
       />
 
@@ -415,7 +473,7 @@ export function SessionDetails() {
       {/* Messages Card with Infinite Scroll */}
       <Card>
         <CardHeader>
-          <CardTitle>Messages</CardTitle>
+          <CardTitle>Messages ({formatters.number(totalMessageCount)})</CardTitle>
           <CardDescription>
             All messages in this session (most recent first) - Auto-updates every 5 seconds
           </CardDescription>
@@ -432,7 +490,7 @@ export function SessionDetails() {
                     <MessageItem 
                       message={message} 
                       index={index} 
-                      totalMessages={allMessages.length} 
+                      totalMessages={totalMessageCount} 
                     />
                   </div>
                 ))}
