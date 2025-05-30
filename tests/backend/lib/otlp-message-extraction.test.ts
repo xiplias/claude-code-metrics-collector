@@ -227,7 +227,7 @@ describe("OTLP Message Extraction Edge Cases", () => {
       // Verify session
       const session = testDb.query("SELECT * FROM sessions WHERE session_id = ?").get(sessionId);
       expect(session).toBeTruthy();
-      expect(session.total_cost).toBe(0.10);
+      expect(session.total_cost).toBeCloseTo(0.15, 10); // 0.10 + 0.05 from both metrics
 
       // Verify message with all data
       const message = testDb.query("SELECT * FROM messages WHERE message_id = ?").get("edge-msg-mixed");

@@ -375,9 +375,10 @@ describe("Production Pattern OTLP Tests", () => {
 
       processOTLPMetricsTest(toolDecisionPattern);
 
-      // Tool decision metrics don't create sessions directly
+      // Tool decision metrics now create sessions (simplified approach)
       const session = testDb.query("SELECT * FROM sessions WHERE session_id = ?").get("test-edit-session");
-      expect(session).toBeNull();
+      expect(session).toBeTruthy();
+      expect(session.user_id).toBe("test-edit-user789");
 
       // Verify metric was stored
       const metrics = testDb.query("SELECT * FROM metrics WHERE metric_name = ?")
@@ -449,9 +450,10 @@ describe("Production Pattern OTLP Tests", () => {
 
       processOTLPMetricsTest(lineCountPattern);
 
-      // Line count metrics don't create sessions directly
+      // Line count metrics now create sessions (simplified approach)
       const session = testDb.query("SELECT * FROM sessions WHERE session_id = ?").get("test-coding-session");
-      expect(session).toBeNull();
+      expect(session).toBeTruthy();
+      expect(session.user_id).toBe("test-coder-user456");
 
       // Verify both line count metrics were stored
       const metrics = testDb.query("SELECT * FROM metrics WHERE metric_name = ?")
