@@ -1,48 +1,7 @@
 import { corsHeaders, logRequest } from "../lib/utils";
-import { recordMetric, getMetrics, validateMetricData, parseMetricData } from "../lib/services/metrics-service";
+import { getMetrics } from "../lib/services/metrics-service";
 import { validateOTLPContentType, parseOTLPData, processOTLPData } from "../lib/services/otlp-service";
 import { extractOTLPData } from "../lib/otlp-helpers";
-
-export async function handlePostMetrics(req: Request) {
-  const startTime = Date.now();
-  let requestBody: string | undefined;
-
-  try {
-    const rawData = await req.json();
-    requestBody = JSON.stringify(rawData);
-
-    const validation = validateMetricData(rawData);
-    if (!validation.isValid) {
-      const responseTime = Date.now() - startTime;
-      logRequest(req, "/metrics", 400, responseTime, validation.error, requestBody);
-      
-      return Response.json(
-        { error: validation.error },
-        { headers: corsHeaders, status: 400 }
-      );
-    }
-
-    const metricData = parseMetricData(rawData);
-    recordMetric(metricData);
-
-    const responseTime = Date.now() - startTime;
-    logRequest(req, "/metrics", 200, responseTime, undefined, requestBody);
-
-    return Response.json(
-      { success: true, message: "Metric recorded" },
-      { headers: corsHeaders }
-    );
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logRequest(req, "/metrics", 500, responseTime, errorMessage, requestBody);
-
-    return Response.json(
-      { error: "Failed to record metric", message: errorMessage },
-      { headers: corsHeaders, status: 500 }
-    );
-  }
-}
 
 export async function handleGetMetrics(req: Request) {
   const url = new URL(req.url);

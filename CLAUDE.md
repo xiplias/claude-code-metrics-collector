@@ -32,7 +32,7 @@ bun test:watch
 
 ### Unified Server Pattern
 Single Bun server (`backend/server.ts`) serves both API and frontend:
-- **Telemetry endpoints** (`/metrics`, `/events`, `/v1/metrics`) - OTLP ingestion for external services
+- **Telemetry endpoints** (`/v1/metrics`) - OTLP ingestion for external services
 - **API endpoints** (`/api/*`) - JSON responses for frontend
 - **Static serving** (`/*`) - React SPA
 
@@ -46,7 +46,7 @@ SQLite with prepared statements in `backend/lib/database.ts`:
 
 ### Route Handler Pattern
 Route definitions in `backend/server.ts` import handlers from `backend/routes/`:
-- `metrics.ts` - Metric ingestion and querying
+- `metrics.ts` - OTLP metric ingestion and querying
 - `sessions.ts` - Session data and details
 - `stats.ts` - Dashboard statistics
 - `events.ts`, `logs.ts`, `health.ts` - Supporting endpoints
@@ -82,7 +82,7 @@ React app in `src/` with:
 - Server entry point is `backend/server.ts` (not src/)
 - All route logic is in `backend/routes/` files, not server.ts
 - Database operations use prepared statements for performance
-- Only data ingestion endpoints (POST /metrics, /events, /v1/metrics) are logged
+- Only data ingestion endpoints (POST /v1/metrics) are logged
 - CORS enabled for cross-origin frontend requests
 - Session tracking based on sessionId extraction from OTLP attributes
 

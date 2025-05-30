@@ -3,11 +3,10 @@ import index from "../src/index.html";
 
 // Import route handlers from backend
 import {
-  handlePostMetrics,
   handleGetMetrics,
   handlePostV1Metrics,
 } from "./routes/metrics";
-import { handlePostEvents, handleGetEvents } from "./routes/events";
+import { handleGetEvents } from "./routes/events";
 import { handleGetStats } from "./routes/stats";
 import { handleGetHealth } from "./routes/health";
 import {
@@ -21,19 +20,6 @@ const server = serve({
   port: 3000,
   routes: {
     // Telemetry endpoints (root level for external services)
-    // POST /metrics - Record a metric
-    "/metrics": {
-      async POST(req) {
-        return handlePostMetrics(req);
-      },
-    },
-
-    // POST /events - Record an event
-    "/events": {
-      async POST(req) {
-        return handlePostEvents(req);
-      },
-    },
 
     // POST /v1/metrics - OTLP endpoint
     "/v1/metrics": {
@@ -115,8 +101,6 @@ console.log(`🚀 Unified server running at ${server.url}
 
 Available endpoints:
   Telemetry (for external services):
-    POST /metrics     - Record a metric
-    POST /events      - Record an event
     POST /v1/metrics  - Receive OTLP metrics
     
   API (for frontend):
