@@ -213,6 +213,16 @@ docker run -p 3000:3000 claude-code-collector
 - Configure CORS for cross-origin requests
 - Monitor disk space for database growth
 
+## 🔒 Security Notice
+
+**No Authentication Implemented**: This collector currently has no authentication or authorization mechanisms. All telemetry endpoints and dashboard data are publicly accessible. For production deployments:
+
+- Deploy behind a VPN or private network (e.g., Tailscale like me)
+- Use a reverse proxy with authentication (nginx, Traefik, etc.)
+- Implement network-level access controls
+- Consider adding API keys or basic auth if exposing publicly
+- Monitor access logs for unauthorized usage
+
 ## 🤝 Contributing
 
 This project demonstrates collaborative development with Claude Code. The modular architecture makes it easy to extend with new features:
