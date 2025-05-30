@@ -2,7 +2,7 @@
 
 A real-time telemetry and analytics dashboard that collects OpenTelemetry metrics from Claude Code CLI sessions, providing comprehensive insights into usage patterns, costs, performance, and development workflows.
 
-> **Built with Claude Code**: This project was created collaboratively using [Claude Code](https://claude.ai/code), demonstrating the power of AI-assisted development for building full-stack applications.
+> **Built with Claude Code**: This project was created collaboratively using [Claude Code](https://claude.ai/code)
 
 ## 🚀 Features
 
