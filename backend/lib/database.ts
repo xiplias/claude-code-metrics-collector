@@ -1,7 +1,9 @@
 import { Database } from "bun:sqlite";
 
 // Initialize SQLite database
-export const db = new Database("claude-metrics.db");
+// Use DATABASE_PATH environment variable if set, otherwise default to local file
+const dbPath = process.env.DATABASE_PATH || "claude-metrics.db";
+export const db = new Database(dbPath);
 
 // Create tables if they don't exist
 db.run(`

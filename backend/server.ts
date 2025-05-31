@@ -1,5 +1,5 @@
-import { serve } from "bun";
-import index from "../src/index.html";
+import { serve, file } from "bun";
+import { join } from "path";
 
 // Import route handlers from backend
 import {
@@ -85,7 +85,29 @@ const server = serve({
       },
     },
 
-    "/*": index,
+    "/*": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const pathname = url.pathname;
+        
+        // In production, serve from dist directory
+        const distPath = join(process.cwd(), "dist");
+        
+        // Try to serve static files first
+        if (pathname !== "/" && pathname !== "/index.html") {
+          const filePath = join(distPath, pathname);
+          const staticFile = file(filePath);
+          
+          if (await staticFile.exists()) {
+            return new Response(staticFile);
+          }
+        }
+        
+        // Serve index.html for all other routes (SPA)
+        const indexPath = join(distPath, "index.html");
+        return new Response(file(indexPath));
+      }
+    },
   },
 
   development: process.env.NODE_ENV !== "production" && {
